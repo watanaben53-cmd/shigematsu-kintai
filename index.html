@@ -262,7 +262,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
   <div class="tab" onclick="sw('records',this)">勤怠一覧</div>
   <div class="tab" onclick="sw('paidleave',this)">有給管理</div>
   <div class="tab" onclick="sw('calendar',this)">カレンダー</div>
-  <div class="tab" onclick="sw('employees',this)">従業員管理</div>
+  <div class="tab" id="tab-employees" onclick="sw('employees',this)" style="display:none">従業員管理</div>
   <div class="tab" onclick="sw('print',this)">印刷</div>
 </div>
 
@@ -509,10 +509,28 @@ function checkCmd(){
     adminMode=true;
     document.getElementById('cmd-btn').textContent='管理者ログアウト';document.getElementById('cmd-btn').classList.add('unlocked');
     document.getElementById('admin-bar').style.display='flex';document.getElementById('add-wrap').style.display='inline-flex';document.getElementById('ops-head').textContent='操作';
+    document.getElementById('tab-employees').style.display='';
     closeCmd();renderRecords();
   } else document.getElementById('cmd-error').textContent='コマンドが正しくありません';
 }
-function lockAdmin(){adminMode=false;editingId=null;addingRow=false;document.getElementById('cmd-btn').textContent='管理者';document.getElementById('cmd-btn').classList.remove('unlocked');document.getElementById('admin-bar').style.display='none';document.getElementById('add-wrap').style.display='none';document.getElementById('ops-head').textContent='';renderRecords();}
+function lockAdmin(){
+  adminMode=false;editingId=null;addingRow=false;
+  document.getElementById('cmd-btn').textContent='管理者';
+  document.getElementById('cmd-btn').classList.remove('unlocked');
+  document.getElementById('admin-bar').style.display='none';
+  document.getElementById('add-wrap').style.display='none';
+  document.getElementById('ops-head').textContent='';
+  document.getElementById('tab-employees').style.display='none';
+  // 従業員管理を表示中だったら打刻タブに戻す
+  const cur=document.querySelector('.sec.on');
+  if(cur&&cur.id==='sec-employees'){
+    document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+    document.getElementById('sec-punch').classList.add('on');
+    document.querySelector('.tab').classList.add('on');
+  }
+  renderRecords();
+}
 
 /* ===================== NUMPAD ===================== */
 function initNumpad(){document.getElementById('numpad').innerHTML=[1,2,3,4,5,6,7,8,9,'C',0,'←'].map(k=>`<div class="numkey" onclick="nk('${k}')">${k}</div>`).join('');}
