@@ -769,7 +769,15 @@ function updateClock(){
   document.getElementById('hclock').innerHTML=n.getFullYear()+'.'+(n.getMonth()+1)+'.'+n.getDate()+'&nbsp;'+WDAYS[n.getDay()]+'<br>'+p(n.getHours())+':'+p(n.getMinutes());
   document.getElementById('punch-date-s').textContent=n.getFullYear()+'年'+(n.getMonth()+1)+'月'+n.getDate()+'日（'+WDAYS[n.getDay()]+'）';
 }
-if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    reg.update();
+  }).catch(() => {});
+  /* 古いキャッシュを全削除してから新しいSWを有効化 */
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    console.log('SW updated');
+  });
+}
 initNumpad();populateSels();initMonths();initYears();
 renderPunchToday();renderEmployees();
 setInterval(updateClock,1000);updateClock();
