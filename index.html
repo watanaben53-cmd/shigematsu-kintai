@@ -11,65 +11,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
 
+<!-- ===== PWA ===== -->
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
-<!-- Firebase SDK -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyC4GP61J-tID8VgRbQRjda6VJT4iYtnqfE",
-  authDomain: "shigematsu-kintai.firebaseapp.com",
-  projectId: "shigematsu-kintai",
-  storageBucket: "shigematsu-kintai.firebasestorage.app",
-  messagingSenderId: "378992232159",
-  appId: "1:378992232159:web:a5d0b6a062c4f7ff170b6a"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-window._syncStatus = function(col, ok) {
-  if(!window._syncState) window._syncState = {};
-  window._syncState[col] = ok;
-  const allOk = ['employees','records','calDays'].every(k => window._syncState[k]);
-  const dot = document.getElementById('sync-dot');
-  const txt = document.getElementById('sync-txt');
-  if(!dot || !txt) return;
-  if(allOk){ dot.className='sync-dot ok'; txt.textContent='同期済'; }
-  else { dot.className='sync-dot pending'; txt.textContent='同期中'; }
-  window._renderAll && window._renderAll();
-};
-
-function startSync() {
-  onSnapshot(collection(db,'employees'), snap => {
-    const r=[];snap.forEach(d=>r.push({id:d.id,...d.data()}));
-    if(r.length>0){window.employees=r; window._renderAll&&window._renderAll();}
-    window._syncStatus('employees',true);
-  }, ()=>window._syncStatus('employees',false));
-  onSnapshot(collection(db,'records'), snap => {
-    const r=[];snap.forEach(d=>r.push({id:d.id,...d.data()}));
-    window.records=r; window._renderAll&&window._renderAll();
-    window._syncStatus('records',true);
-  }, ()=>window._syncStatus('records',false));
-  onSnapshot(collection(db,'calDays'), snap => {
-    const r={};snap.forEach(d=>r[d.id]=d.data());
-    window.calDays=r; window._renderAll&&window._renderAll();
-    window._syncStatus('calDays',true);
-  }, ()=>window._syncStatus('calDays',false));
-}
-
-window.fsSetEmployee = async e => await setDoc(doc(db,'employees',e.id),{...e});
-window.fsDeleteEmployee = async id => await deleteDoc(doc(db,'employees',id));
-window.fsSetRecord = async r => await setDoc(doc(db,'records',r.id),{...r});
-window.fsDeleteRecord = async id => await deleteDoc(doc(db,'records',id));
-window.fsSetCalDay = async (ds,v) => await setDoc(doc(db,'calDays',ds),v);
-window.fsDeleteCalDay = async ds => await deleteDoc(doc(db,'calDays',ds));
-
-window.addEventListener('load', ()=>setTimeout(startSync,600));
-</script>
-
 
 <style>
 /* ===== RESET & BASE ===== */
@@ -92,11 +36,13 @@ body{font-family:'Noto Sans JP',sans-serif;font-size:13px;background:var(--bg);c
 .hdr-clock{font-size:10px;color:rgba(255,255,255,.6);text-align:right;line-height:1.5}
 .cmd-btn{background:rgba(255,255,255,.1);border:.5px solid rgba(255,255,255,.2);color:rgba(255,255,255,.75);font-size:10px;padding:5px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;transition:all .15s}
 .cmd-btn:hover{background:rgba(255,255,255,.2)}
+.cmd-btn.unlocked{background:rgba(200,100,40,.4);border-color:rgba(255,160,80,.4);color:#ffb080}
 .sync-label{display:flex;align-items:center;gap:4px}
 .sync-dot{width:8px;height:8px;border-radius:50%;background:#ff9800;display:inline-block;transition:background .3s}
 .sync-dot.ok{background:#4caf50}
-.sync-dot.pending{background:#ff9800}
-.cmd-btn.unlocked{background:rgba(200,100,40,.4);border-color:rgba(255,160,80,.4);color:#ffb080}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a2744;color:#fff;padding:9px 20px;border-radius:20px;font-size:12px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+.btn-edit{background:#fff8f0;color:#b85010;border-color:#f0c080;font-size:10px;padding:2px 8px}
 /* ===== TABS ===== */
 .tabs{display:flex;background:var(--white);border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;position:sticky;top:57px;z-index:99}
 .tabs::-webkit-scrollbar{display:none}
@@ -208,8 +154,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 .overlay.show{display:flex}
 .dialog{background:var(--white);border-radius:var(--radius-lg);padding:22px;width:320px;border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.2)}
 /* ===== PRINT ===== */
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a2744;color:#fff;padding:9px 20px;border-radius:20px;font-size:12px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
-.toast.show{opacity:1}
 @media print{
   body>*{display:none!important}
   #print-area{display:block!important;position:static!important}
@@ -250,7 +194,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
     <div class="hdr-txt">重松工業株式会社<small>勤怠・有給管理システム</small></div>
   </div>
   <div class="hdr-right">
-    <div class="sync-label" id="sync-label"><span class="sync-dot pending" id="sync-dot"></span><span id="sync-txt" style="font-size:9px;color:rgba(255,255,255,.5)">接続中</span></div><div class="hdr-clock" id="hclock"></div>
+    <div class="hdr-clock" id="hclock"></div>
+    <div class="sync-label"><span class="sync-dot pending" id="sync-dot"></span><span id="sync-txt" style="font-size:9px;color:rgba(255,255,255,.5)">接続中</span></div>
     <button class="cmd-btn" id="pw-change-btn" onclick="showPwModal()" style="display:none;background:rgba(200,146,26,.25);border-color:rgba(200,146,26,.4);color:#f0c060;font-size:9px">PW変更</button>
     <button class="cmd-btn" id="cmd-btn" onclick="showCmd()">管理者</button>
   </div>
@@ -307,6 +252,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 
 <!-- ===== RECORDS ===== -->
 <div id="sec-records" class="sec">
+  <div id="admin-bar" style="display:none;background:#fff8f0;border:1px solid #e8c060;border-radius:10px;padding:8px 13px;font-size:11px;color:#8a5010;display:none;align-items:center;gap:8px;margin-bottom:10px">
+    <b>管理者モード</b>：「編集」「削除」「＋記録」が利用可能です
+  </div>
   <div id="admin-bar" style="display:none" class="abox abox-w">
     <b>管理者モード</b>：「編集」「削除」「＋記録」が利用可能です
   </div>
@@ -354,6 +302,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
       <tbody id="cal-list-body"></tbody>
     </table></div>
   </div>
+  <div id="cal-modal" style="display:none">
+    <div class="panel" style="border-color:#3a5abf">
+      <div class="ptitle">日付設定 <span id="modal-lbl" class="badge b-navy"></span></div>
+      <div class="frow">
+        <div class="fg"><label>種別</label><select id="modal-type"><option value="holiday">祝日</option><option value="company_off">会社公休</option><option value="special">特別休暇</option></select></div>
+        <div class="fg"><label>名称</label><input type="text" id="modal-name" placeholder="例：創立記念日"></div>
+      </div>
+      <div class="fg" style="margin-bottom:9px"><label>対象</label><select id="modal-target"><option value="all">全員共通</option><option value="shokutaku">嘱託職員のみ</option><option value="regular">正社員・契約社員のみ</option></select></div>
+      <div class="flex"><button class="btn btn-p" onclick="saveCalDay()">保存</button><button class="btn" onclick="closeModal()">キャンセル</button><button class="btn btn-d" onclick="deleteCalDay()">削除</button></div>
+    </div>
+  </div>
 </div>
 
 <!-- ===== EMPLOYEES ===== -->
@@ -375,10 +334,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
       <div class="fg"><label>嘱託 終業</label><input type="time" id="emp-send" value="17:10"></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
-      <button class="btn btn-p" onclick="addEmployee()" style="font-size:13px;padding:9px 22px">＋ 追加してFirebaseに記録</button>
-      <span style="font-size:11px;color:var(--text3)">入力後このボタンで保存されます</span>
+      <button class="btn btn-p" onclick="addEmployee()" style="font-size:13px;padding:9px 20px">＋ 追加してFirebaseに記録</button>
     </div>
-    <div id="emp-save-result" style="margin-top:8px;min-height:18px"></div>
+    <div id="emp-save-result" style="margin-top:6px;min-height:18px;font-size:11px"></div>
   </div>
   <div class="panel">
     <div class="ptitle">従業員一覧</div>
@@ -393,13 +351,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 <div id="sec-print" class="sec">
   <div class="panel">
     <div class="ptitle">勤怠サマリー 一括印刷</div>
-    <div class="flex" style="margin-bottom:6px">
+    <div class="flex" style="margin-bottom:7px">
       <div class="fg" style="flex:1;max-width:200px"><label>対象月</label><select id="print-month" style="font-size:12px;padding:6px 8px"></select></div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:12px">従業員全員分を1枚のA4用紙に一括印刷します（縦向き）</div>
-    <div class="flex" style="margin-bottom:14px">
-      <button class="btn btn-p" style="padding:9px 22px;font-size:13px" onclick="doPrint()">全員分を一括印刷</button>
-    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px">従業員全員分をA4縦向き1枚に一括印刷します</div>
+    <button class="btn btn-p" style="padding:9px 22px;font-size:13px;margin-bottom:14px" onclick="doPrint()">全員分を一括印刷</button>
     <div id="print-preview"></div>
   </div>
 </div>
@@ -409,113 +365,48 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 <div id="print-area"></div>
 
 
-<!-- 従業員編集モーダル -->
-<div class="overlay" id="edit-emp-overlay">
-  <div class="dialog" style="width:360px">
-    <div style="font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text1)">従業員情報を編集</div>
-    <div style="font-size:11px;color:var(--text2);margin-bottom:13px">変更後「保存」を押してFirebaseに記録されます</div>
-    <input type="hidden" id="edit-emp-id">
-    <div class="frow" style="margin-bottom:8px">
-      <div class="fg"><label>従業員番号</label><input type="text" id="edit-emp-no" maxlength="6"></div>
-      <div class="fg"><label>氏名</label><input type="text" id="edit-emp-name"></div>
-    </div>
-    <div class="frow" style="margin-bottom:8px">
-      <div class="fg"><label>部署</label><input type="text" id="edit-emp-dept"></div>
-      <div class="fg"><label>雇用形態</label>
-        <select id="edit-emp-etype" onchange="editEmpEtypeChange()">
-          <option value="full">正社員</option>
-          <option value="shokutaku">嘱託職員</option>
-          <option value="part">パートタイム</option>
-          <option value="contract">契約社員</option>
-        </select>
-      </div>
-    </div>
-    <div class="frow" style="margin-bottom:8px">
-      <div class="fg"><label>社会保険取得日</label><input type="date" id="edit-emp-insdate"></div>
-      <div class="fg"><label>残業管理区分</label>
-        <select id="edit-emp-ot-type">
-          <option value="actual">実績残業あり</option>
-          <option value="fixed">見込み残業（固定）</option>
-          <option value="none">残業なし</option>
-        </select>
-      </div>
-    </div>
-    <div class="frow" id="edit-fg-shokutaku" style="display:none;margin-bottom:8px">
-      <div class="fg"><label>嘱託 始業</label><input type="time" id="edit-emp-sstart" value="08:00"></div>
-      <div class="fg"><label>嘱託 終業</label><input type="time" id="edit-emp-send" value="17:10"></div>
-    </div>
-    <div id="edit-emp-result" style="font-size:11px;min-height:18px;margin-bottom:9px"></div>
-    <div class="flex">
-      <button class="btn btn-p" onclick="saveEmpEdit()">Firebaseに保存</button>
-      <button class="btn" onclick="closeEmpEditModal()">キャンセル</button>
-    </div>
-  </div>
-</div>
+<div class="toast" id="toast"></div>
 
-<!-- パスワード変更モーダル -->
-<div class="overlay" id="pw-overlay">
-  <div class="dialog">
-    <div style="font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text1)">管理者コマンド変更</div>
-    <div style="font-size:11px;color:var(--text2);margin-bottom:13px">新しいコマンドを設定してください（このセッション中のみ有効）</div>
-    <div class="fg" style="margin-bottom:8px">
-      <label>現在のコマンド</label>
-      <input type="password" id="pw-current" placeholder="現在のコマンド">
-    </div>
-    <div class="fg" style="margin-bottom:8px">
-      <label>新しいコマンド</label>
-      <input type="password" id="pw-new" placeholder="新しいコマンド（6文字以上）">
-    </div>
-    <div class="fg" style="margin-bottom:10px">
-      <label>新しいコマンド（確認）</label>
-      <input type="password" id="pw-confirm" placeholder="もう一度入力">
-    </div>
-    <div id="pw-error" style="font-size:11px;color:#c0202a;min-height:16px;margin-bottom:9px"></div>
-    <div class="flex">
-      <button class="btn btn-p" onclick="changePw()">変更する</button>
-      <button class="btn" onclick="closePwModal()">キャンセル</button>
-    </div>
-  </div>
-</div>
-<!-- カレンダー日付設定モーダル -->
 <div class="overlay" id="cal-overlay">
   <div class="dialog" style="width:340px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div>
-        <div style="font-size:13px;font-weight:500;color:var(--text1)" id="modal-lbl-date"></div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px" id="modal-lbl-dow"></div>
-      </div>
-      <span id="modal-lbl" class="badge b-navy" style="display:none"></span>
+    <div style="margin-bottom:12px">
+      <div style="font-size:14px;font-weight:500;color:var(--text1)" id="modal-lbl-date"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px" id="modal-lbl-dow"></div>
+      <span id="modal-lbl" style="display:none"></span>
     </div>
-    <div class="fg" style="margin-bottom:9px">
-      <label>種別</label>
-      <select id="modal-type" style="font-size:13px;padding:8px 10px">
-        <option value="holiday">祝日</option>
-        <option value="company_off">会社公休</option>
-        <option value="special">特別休暇</option>
-      </select>
-    </div>
-    <div class="fg" style="margin-bottom:9px">
-      <label>名称</label>
-      <input type="text" id="modal-name" placeholder="例：創立記念日、夏季休暇">
-    </div>
-    <div class="fg" style="margin-bottom:13px">
-      <label>対象</label>
-      <select id="modal-target">
-        <option value="all">全員共通</option>
-        <option value="shokutaku">嘱託職員のみ</option>
-        <option value="regular">正社員・契約社員のみ</option>
-      </select>
-    </div>
-    <div class="flex">
-      <button class="btn btn-p" onclick="saveCalDay()">設定する</button>
-      <button class="btn" onclick="closeModal()">キャンセル</button>
-      <button class="btn btn-d" onclick="deleteCalDay()">削除</button>
-    </div>
+    <div class="fg" style="margin-bottom:9px"><label>種別</label><select id="modal-type" style="font-size:13px;padding:8px 10px"><option value="holiday">祝日</option><option value="company_off">会社公休</option><option value="special">特別休暇</option></select></div>
+    <div class="fg" style="margin-bottom:9px"><label>名称</label><input type="text" id="modal-name" placeholder="例：創立記念日、夏季休暇"></div>
+    <div class="fg" style="margin-bottom:14px"><label>対象</label><select id="modal-target"><option value="all">全員共通</option><option value="shokutaku">嘱託職員のみ</option><option value="regular">正社員・契約社員のみ</option></select></div>
+    <div class="flex"><button class="btn btn-p" onclick="saveCalDay()">設定する</button><button class="btn" onclick="closeModal()">キャンセル</button><button class="btn btn-d" onclick="deleteCalDay()">削除</button></div>
   </div>
 </div>
 
-<!-- CMD DIALOG -->
-<div class="toast" id="toast"></div>
+<div class="overlay" id="edit-emp-overlay">
+  <div class="dialog" style="width:360px">
+    <div style="font-size:13px;font-weight:500;margin-bottom:4px">従業員情報を編集</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:13px">変更後「保存」でFirebaseに記録されます</div>
+    <input type="hidden" id="edit-emp-id">
+    <div class="frow" style="margin-bottom:8px"><div class="fg"><label>従業員番号</label><input type="text" id="edit-emp-no" maxlength="6"></div><div class="fg"><label>氏名</label><input type="text" id="edit-emp-name"></div></div>
+    <div class="frow" style="margin-bottom:8px"><div class="fg"><label>部署</label><input type="text" id="edit-emp-dept"></div><div class="fg"><label>雇用形態</label><select id="edit-emp-etype" onchange="editEmpEtypeChange()"><option value="full">正社員</option><option value="shokutaku">嘱託職員</option><option value="part">パートタイム</option><option value="contract">契約社員</option></select></div></div>
+    <div class="frow" style="margin-bottom:8px"><div class="fg"><label>社会保険取得日</label><input type="date" id="edit-emp-insdate"></div><div class="fg"><label>残業管理区分</label><select id="edit-emp-ot-type"><option value="actual">実績残業あり</option><option value="fixed">見込み残業（固定）</option><option value="none">残業なし</option></select></div></div>
+    <div class="frow" id="edit-fg-shokutaku" style="display:none;margin-bottom:8px"><div class="fg"><label>嘱託 始業</label><input type="time" id="edit-emp-sstart" value="08:00"></div><div class="fg"><label>嘱託 終業</label><input type="time" id="edit-emp-send" value="17:10"></div></div>
+    <div id="edit-emp-result" style="font-size:11px;min-height:18px;margin-bottom:9px"></div>
+    <div class="flex"><button class="btn btn-p" onclick="saveEmpEdit()">Firebaseに保存</button><button class="btn" onclick="closeEmpEditModal()">キャンセル</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="pw-overlay">
+  <div class="dialog">
+    <div style="font-size:13px;font-weight:500;margin-bottom:4px">管理者コマンド変更</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:13px">セッション中のみ有効です</div>
+    <div class="fg" style="margin-bottom:8px"><label>現在のコマンド</label><input type="password" id="pw-current" placeholder="現在のコマンド"></div>
+    <div class="fg" style="margin-bottom:8px"><label>新しいコマンド</label><input type="password" id="pw-new" placeholder="4文字以上"></div>
+    <div class="fg" style="margin-bottom:10px"><label>新しいコマンド（確認）</label><input type="password" id="pw-confirm" placeholder="もう一度入力"></div>
+    <div id="pw-error" style="font-size:11px;color:#c0202a;min-height:16px;margin-bottom:9px"></div>
+    <div class="flex"><button class="btn btn-p" onclick="changePw()">変更する</button><button class="btn" onclick="closePwModal()">キャンセル</button></div>
+  </div>
+</div>
+
 <div class="overlay" id="cmd-overlay">
   <div class="dialog">
     <div style="font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text1)">管理者認証</div>
@@ -526,10 +417,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
   </div>
 </div>
 
+
 <script>
 /* ===================== DATA & CONSTANTS ===================== */
 const WDAYS=['日','月','火','水','木','金','土'];
-let ADMIN_CMD='shigematsu2024'; /* 管理者コマンド初期値 */ /* ← 必要に応じて変更 */
+let ADMIN_CMD='shigematsu2024';
 const today=new Date();
 const todayStr=fd(today);
 let adminMode=false,modalDate='',curPaidEmp=null,editingId=null,addingRow=false;
@@ -542,19 +434,7 @@ window.employees=[
 ];
 window.records=[];window.calDays={};let punches={};
 
-
-window._renderAll = function(){
-  const cur = document.querySelector('.sec.on');
-  if(!cur) return;
-  const id = cur.id.replace('sec-','');
-  if(id==='punch') renderPunchToday();
-  if(id==='dashboard') renderDashboard();
-  if(id==='records') renderRecords();
-  if(id==='paidleave') renderPaidLeave();
-  if(id==='calendar') renderCalendar();
-  if(id==='employees') renderEmployees();
-};
-
+window._renderAll=function(){const cur=document.querySelector('.sec.on');if(!cur)return;const id=cur.id.replace('sec-','');if(id==='punch')renderPunchToday();if(id==='dashboard')renderDashboard();if(id==='records')renderRecords();if(id==='paidleave')renderPaidLeave();if(id==='calendar')renderCalendar();if(id==='employees')renderEmployees();};
 /* ===================== UTILS ===================== */
 function fd(d){return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())}
 function p(n){return n<10?'0'+n:''+n}
@@ -599,7 +479,7 @@ function workdays(y,m,et){const n=new Date(y,m+1,0).getDate();let c=0;for(let d=
   ['12-29','12-30','12-31'].forEach(d=>window.calDays[yr+'-'+d]={type:'company_off',name:'年末休暇',target:'all'});
 })();
 
-function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+function showToast(msg){const t=document.getElementById('toast');if(!t)return;t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 /* ===================== ADMIN ===================== */
 function showCmd(){if(adminMode){lockAdmin();return;}document.getElementById('cmd-overlay').classList.add('show');document.getElementById('cmd-input').value='';document.getElementById('cmd-error').textContent='';setTimeout(()=>document.getElementById('cmd-input').focus(),50);}
 function closeCmd(){document.getElementById('cmd-overlay').classList.remove('show');}
@@ -607,29 +487,19 @@ function checkCmd(){
   if(document.getElementById('cmd-input').value===ADMIN_CMD){
     adminMode=true;
     document.getElementById('cmd-btn').textContent='管理者ログアウト';document.getElementById('cmd-btn').classList.add('unlocked');
-    document.getElementById('pw-change-btn').style.display='';
     document.getElementById('admin-bar').style.display='flex';document.getElementById('add-wrap').style.display='inline-flex';document.getElementById('ops-head').textContent='操作';
-    document.getElementById('tab-employees').style.display='';
     closeCmd();renderRecords();
   } else document.getElementById('cmd-error').textContent='コマンドが正しくありません';
 }
 function lockAdmin(){
   adminMode=false;editingId=null;addingRow=false;
-  document.getElementById('cmd-btn').textContent='管理者';
-  document.getElementById('pw-change-btn').style.display='none';
-  document.getElementById('cmd-btn').classList.remove('unlocked');
-  document.getElementById('admin-bar').style.display='none';
-  document.getElementById('add-wrap').style.display='none';
-  document.getElementById('ops-head').textContent='';
+  document.getElementById('cmd-btn').textContent='管理者';document.getElementById('cmd-btn').classList.remove('unlocked');
+  const ab=document.getElementById('admin-bar');if(ab)ab.style.display='none';
+  document.getElementById('add-wrap').style.display='none';document.getElementById('ops-head').textContent='';
   document.getElementById('tab-employees').style.display='none';
-  // 従業員管理を表示中だったら打刻タブに戻す
+  document.getElementById('pw-change-btn').style.display='none';
   const cur=document.querySelector('.sec.on');
-  if(cur&&cur.id==='sec-employees'){
-    document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
-    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-    document.getElementById('sec-punch').classList.add('on');
-    document.querySelector('.tab').classList.add('on');
-  }
+  if(cur&&cur.id==='sec-employees'){document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));document.getElementById('sec-punch').classList.add('on');document.querySelector('.tab').classList.add('on');}
   renderRecords();
 }
 
@@ -730,7 +600,7 @@ function saveEdit(id,empId){
   if(['paid','half_am','half_pm'].includes(type)&&!reason){alert('有給取得の場合、取得理由の記入が必須です');return;}
   const emp=ge(empId),calc=calcWork({type,start,end,brk},emp);
   const idx=records.findIndex(r=>r.id===id);if(idx>=0)records[idx]={...records[idx],type,start,end,brk:Number(brk),reason,...calc};
-  editingId=null;renderRecords();showToast('保存しました');
+  editingId=null;renderRecords();
 }
 function delRec(id){if(!confirm('この記録を削除しますか？'))return;records=window.records.filter(r=>r.id!==id);renderRecords();}
 function startAddRow(){window._addDs=null;addingRow=true;editingId=null;renderRecords();}
@@ -788,13 +658,10 @@ function renderCalList(){
   document.getElementById('cal-list-body').innerHTML=es.map(([d,v])=>`<tr><td>${d}</td><td><span class="badge ${v.type==='holiday'?'b-blue':'b-navy'}">${tL[v.type]||v.type}</span></td><td>${v.name||''}</td><td>${tgL[v.target]||v.target}</td><td><button class="btn btn-sm btn-d" onclick="rmCal('${d}')">削除</button></td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;padding:14px;color:var(--text3)">登録なし</td></tr>';
 }
 function openCal(ds){
-  modalDate=ds;
-  const cd=window.calDays[ds];
-  const d=new Date(ds+'T00:00:00');
-  const dowJ=['日','月','火','水','木','金','土'];
+  modalDate=ds;const cd=window.calDays[ds];const d=new Date(ds+'T00:00:00');const dj=['日','月','火','水','木','金','土'];
   document.getElementById('modal-lbl').textContent=ds;
   document.getElementById('modal-lbl-date').textContent=d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日';
-  document.getElementById('modal-lbl-dow').textContent=dowJ[d.getDay()]+'曜日'+(isWE(ds)?'（休日）':'（平日）');
+  document.getElementById('modal-lbl-dow').textContent=dj[d.getDay()]+'曜日'+(isWE(ds)?'（休日）':'（平日）');
   document.getElementById('modal-type').value=cd?cd.type:'company_off';
   document.getElementById('modal-name').value=cd?cd.name||'':'';
   document.getElementById('modal-target').value=cd?cd.target:'all';
@@ -802,10 +669,10 @@ function openCal(ds){
   setTimeout(()=>document.getElementById('modal-name').focus(),80);
 }
 function closeModal(){document.getElementById('cal-overlay').classList.remove('show');modalDate='';}
-function saveCalDay(){if(!modalDate)return;window.calDays[modalDate]={type:document.getElementById('modal-type').value,name:document.getElementById('modal-name').value,target:document.getElementById('modal-target').value};closeModal();renderCalendar();}
-function deleteCalDay(){if(!modalDate)return;delete window.calDays[modalDate];closeModal();renderCalendar();}
-function rmCal(d){if(!confirm('削除しますか？'))return;delete window.calDays[d];renderCalendar();}
-function addNationalHolidays(){const yr=parseInt(document.getElementById('cal-year').value);[['01-01','元日'],['02-11','建国記念の日'],['02-23','天皇誕生日'],['03-20','春分の日'],['04-29','昭和の日'],['05-03','憲法記念日'],['05-04','みどりの日'],['05-05','こどもの日'],['07-21','海の日'],['08-11','山の日'],['09-15','敬老の日'],['09-23','秋分の日'],['10-13','スポーツの日'],['11-03','文化の日'],['11-23','勤労感謝の日']].forEach(([d,n])=>{if(!window.calDays[yr+'-'+d]){const v={type:'holiday',name:n,target:'all'};window.calDays[yr+'-'+d]=v;window.fsSetCalDay&&window.fsSetCalDay(yr+'-'+d,v);}});renderCalendar();alert('祝日を設定しました');}
+function saveCalDay(){if(!modalDate)return;const cv={type:document.getElementById('modal-type').value,name:document.getElementById('modal-name').value,target:document.getElementById('modal-target').value};window.calDays[modalDate]=cv;window.fsSetCalDay&&window.fsSetCalDay(modalDate,cv);closeModal();renderCalendar();}
+function deleteCalDay(){if(!modalDate)return;delete window.calDays[modalDate];window.fsDeleteCalDay&&window.fsDeleteCalDay(modalDate);closeModal();renderCalendar();}
+function rmCal(d){if(!confirm('削除しますか？'))return;delete window.calDays[d];window.fsDeleteCalDay&&window.fsDeleteCalDay(d);renderCalendar();}
+function addNationalHolidays(){const yr=parseInt(document.getElementById('cal-year').value);[['01-01','元日'],['02-11','建国記念の日'],['02-23','天皇誕生日'],['03-20','春分の日'],['04-29','昭和の日'],['05-03','憲法記念日'],['05-04','みどりの日'],['05-05','こどもの日'],['07-21','海の日'],['08-11','山の日'],['09-15','敬老の日'],['09-23','秋分の日'],['10-13','スポーツの日'],['11-03','文化の日'],['11-23','勤労感謝の日']].forEach(([d,n])=>{if(!window.calDays[yr+'-'+d])window.calDays[yr+'-'+d]={type:'holiday',name:n,target:'all'};});renderCalendar();alert('祝日を設定しました');}
 
 /* ===================== EMPLOYEES ===================== */
 function empEtypeChange(){document.getElementById('fg-shokutaku').style.display=document.getElementById('emp-etype').value==='shokutaku'?'grid':'none';}
@@ -819,122 +686,99 @@ function addEmployee(){
   if(window.employees.some(e=>e.no===no)){alert('この従業員番号は既に使用されています');return;}
   const emp={id:'e'+Date.now(),no,name,dept:document.getElementById('emp-dept').value,etype,insDate,otType};
   if(etype==='shokutaku'){emp.sstart=document.getElementById('emp-sstart').value;emp.send=document.getElementById('emp-send').value;}
-  window.employees.push(emp);['emp-no','emp-name','emp-dept'].forEach(id=>document.getElementById(id).value='');
-  populateSels();renderEmployees();alert(name+' を追加しました');
+  window.employees.push(emp);
+  const sr=document.getElementById('emp-save-result');
+  if(sr)sr.innerHTML='<span style="color:#888">保存中...</span>';
+  if(window.fsSetEmployee){window.fsSetEmployee(emp).then(()=>{if(sr)sr.innerHTML='<span style="color:#1a7a3a">✓ '+name+' をFirebaseに記録しました</span>';setTimeout(()=>{if(sr)sr.innerHTML='';},4000);}).catch(()=>{if(sr)sr.innerHTML='<span style="color:#c0202a">⚠ 保存失敗</span>';});}
+  ['emp-no','emp-name','emp-dept'].forEach(id=>document.getElementById(id).value='');
+  populateSels();renderEmployees();showToast(name+' を追加しました');
 }
-function rmEmp(id){if(!confirm('削除しますか？'))return;employees=window.employees.filter(e=>e.id!==id);populateSels();renderEmployees();}
+function rmEmp(id){if(!confirm('削除しますか？'))return;window.employees=window.employees.filter(e=>e.id!==id);window.fsDeleteEmployee&&window.fsDeleteEmployee(id);populateSels();renderEmployees();}
 
 /* ===================== PRINT ===================== */
 function doPrint(){
   const monStr=document.getElementById('print-month').value;
-  const[sy,sm]=monStr.split('-').map(Number);
-  const dim=new Date(sy,sm,0).getDate();
-  const payD=new Date(sy,sm,10);
-  const payStr=payD.getFullYear()+'年'+(payD.getMonth()+1)+'月10日';
-  const tL={work:'出勤',paid:'有給',half_am:'午前休',half_pm:'午後休',absence:'欠勤'};
+  const[sy,sm]=monStr.split('-').map(Number);const dim=new Date(sy,sm,0).getDate();
+  const payStr=new Date(sy,sm,10).getFullYear()+'年'+(new Date(sy,sm,10).getMonth()+1)+'月10日';
   const etL={full:'正社員',shokutaku:'嘱託',part:'パート',contract:'契約'};
-  const otL={actual:'実績',fixed:'見込み',none:'なし'};
-
-  // 全員分の集計
-  const empRows = window.employees.map(emp=>{
-    let workDays=0,paidDays=0,absentDays=0,otMin=0,scheduledDays=0;
-    const dailyData=[];
-    for(let d=1;d<=dim;d++){
-      const ds=sy+'-'+p(sm)+'-'+p(d);
-      const dow=new Date(ds+'T00:00:00').getDay();
-      const offDay=isOff(ds,emp.etype);
-      const cd=window.calDays[ds];
+  const dj=['日','月','火','水','木','金','土'];
+  const empRows=window.employees.map(emp=>{
+    let workDays=0,paidDays=0,absentDays=0,otMin=0;
+    const cells=Array.from({length:dim},(_,i)=>{
+      const d=i+1,ds=sy+'-'+p(sm)+'-'+p(d),dow=new Date(ds+'T00:00:00').getDay();
+      const offDay=isOff(ds,emp.etype),cd=window.calDays[ds];
       const rec=window.records.find(r=>r.empId===emp.id&&r.date===ds);
-      if(!offDay) scheduledDays++;
-      let cell='',cellStyle='';
-      if(offDay){
-        cell=dow===0||dow===6?'休':'公休';
-        if(cd) cell=cd.name?cd.name.slice(0,3):'公休';
-        cellStyle='color:#8888cc;background:#f4f6ff';
-      } else if(rec){
-        if(rec.type==='work'){
-          cell='出';cellStyle='color:#1a7a3a';
-          workDays++;
-          if(rec.otMin&&emp.otType==='actual'){otMin+=rec.otMin;}
-        } else if(rec.type==='paid'){cell='有給';cellStyle='color:#1a4bbf;background:#eef4ff';paidDays+=1;}
-        else if(rec.type==='half_am'||rec.type==='half_pm'){cell='半休';cellStyle='color:#b85010;background:#fff8f0';paidDays+=0.5;}
-        else if(rec.type==='absence'){cell='欠';cellStyle='color:#c0202a';absentDays++;}
-      } else {
-        cell='';cellStyle='color:#ccc';
+      let cell='',bg='#fff',fc='#333';
+      if(offDay){cell=dow===0||dow===6?'休':cd?cd.name.slice(0,2):'公休';bg='#f0f2fb';fc='#8888bb';}
+      else if(rec){
+        if(rec.type==='work'){cell='出';fc='#1a6a3a';workDays++;if(rec.otMin&&emp.otType==='actual')otMin+=rec.otMin;}
+        else if(rec.type==='paid'){cell='有給';bg='#eef4ff';fc='#1a4bbf';paidDays+=1;}
+        else if(rec.type==='half_am'||rec.type==='half_pm'){cell='半休';bg='#fff8f0';fc='#b85010';paidDays+=0.5;}
+        else if(rec.type==='absence'){cell='欠';bg='#fff0f0';fc='#c0202a';absentDays++;}
       }
-      dailyData.push({d,dow,cell,cellStyle,offDay});
-    }
-    const annual=calcAL(emp.insDate);
-    const usedY=usedThisYear(emp.id);
-    return{emp,workDays,paidDays,absentDays,otMin,scheduledDays,dailyData,annual,usedY,remPaid:annual-usedY};
-  });
-
-  // カレンダーヘッダー（日付）
-  const dayHeaders=Array.from({length:dim},(_,i)=>{
-    const d=i+1,ds=sy+'-'+p(sm)+'-'+p(d);
-    const dow=new Date(ds+'T00:00:00').getDay();
-    const c=dow===0?'#c0202a':dow===6?'#1a4bbf':'#555';
-    return`<th style="padding:2px 1px;text-align:center;width:18px;font-size:8px;color:${c};font-weight:400">${d}<br><span style="font-size:7px">${['日','月','火','水','木','金','土'][dow]}</span></th>`;
-  }).join('');
-
-  // 各従業員の行
-  const bodyRows=empRows.map(({emp,workDays,paidDays,absentDays,otMin,scheduledDays,dailyData,annual,usedY,remPaid})=>{
-    const needed=Math.max(0,5-usedY);
-    const alertStyle=needed>0?'color:#c0202a;font-weight:500':'';
+      return`<td style="padding:1px 0;text-align:center;font-size:7.5px;color:${fc};background:${bg};border-right:.5px solid #eee">${cell}</td>`;
+    }).join('');
+    const annual=calcAL(emp.insDate),usedY=usedThisYear(emp.id),remPaid=annual-usedY,needed=Math.max(0,5-usedY);
     const otDisp=emp.otType==='actual'?hm(otMin):emp.otType==='fixed'?'固定':'—';
-    const cells=dailyData.map(({cell,cellStyle,offDay})=>`<td style="padding:1px;text-align:center;font-size:8px;${cellStyle};border-right:.5px solid #eee;${offDay?'background:#f4f6ff':''}">${cell}</td>`).join('');
-    return`<tr style="border-bottom:.5px solid #e8e8e8">
-      <td style="padding:3px 5px;font-size:10px;white-space:nowrap;font-weight:500;min-width:60px">${emp.name}</td>
-      <td style="padding:3px 4px;font-size:9px;color:var(--text2);white-space:nowrap">${etL[emp.etype]||''}</td>
-      ${cells}
-      <td style="padding:3px 5px;text-align:center;font-size:10px;font-weight:500;color:#1a7a3a;border-left:1px solid #ddd">${workDays}</td>
-      <td style="padding:3px 5px;text-align:center;font-size:10px;color:#1a4bbf">${paidDays>0?paidDays:''}</td>
-      <td style="padding:3px 5px;text-align:center;font-size:10px;color:#b85010">${absentDays>0?absentDays:''}</td>
-      <td style="padding:3px 5px;text-align:center;font-size:10px;color:#1a6abf">${otDisp}</td>
-      <td style="padding:3px 5px;text-align:center;font-size:10px;${alertStyle}">${remPaid}<span style="font-size:8px">日</span>${needed>0?'<br><span style="font-size:7px;color:#c0202a">不足'+needed+'日</span>':''}</td>
-    </tr>`;
+    return`<tr style="border-bottom:.5px solid #e8e8e8"><td style="padding:3px 5px;font-size:10px;white-space:nowrap;font-weight:500">${emp.name}</td><td style="padding:3px 3px;font-size:8.5px;color:#666">${etL[emp.etype]||''}</td>${cells}<td style="padding:2px 4px;text-align:center;font-size:10px;font-weight:500;color:#1a7a3a;border-left:1px solid #ddd">${workDays}</td><td style="padding:2px 4px;text-align:center;font-size:10px;color:#1a4bbf">${paidDays||''}</td><td style="padding:2px 4px;text-align:center;font-size:10px;color:#b85010">${absentDays||''}</td><td style="padding:2px 4px;text-align:center;font-size:10px;color:#1a6abf">${otDisp}</td><td style="padding:2px 4px;text-align:center;font-size:9px;${needed>0?'color:#c0202a;font-weight:500':''}">${remPaid}日${needed>0?'<br><span style="font-size:7px">不足'+needed+'日</span>':''}</td></tr>`;
   }).join('');
-
-  const html=`<div style="font-family:'Noto Sans JP',sans-serif;padding:12px 14px;font-size:10px;color:#111;max-width:760px;margin:0 auto">
-    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #1a2744;padding-bottom:6px;margin-bottom:8px">
-      <div>
-        <div style="font-size:15px;font-weight:500;color:#1a2744;letter-spacing:.04em">重松工業株式会社</div>
-        <div style="font-size:10px;color:#666;margin-top:1px">勤怠サマリー　${sy}年${sm}月分（1日〜${dim}日締め）　支払日：${payStr}</div>
-      </div>
-      <div style="font-size:9px;color:#999">出力日：${todayStr}</div>
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed">
-      <thead>
-        <tr style="background:#1a2744;color:#fff">
-          <th style="padding:4px 5px;text-align:left;width:62px;font-size:9px">氏名</th>
-          <th style="padding:4px 3px;text-align:left;width:26px;font-size:8px">雇用</th>
-          ${dayHeaders}
-          <th style="padding:4px 4px;text-align:center;width:22px;font-size:8px;border-left:1px solid rgba(255,255,255,.3)">出勤</th>
-          <th style="padding:4px 4px;text-align:center;width:20px;font-size:8px">有給</th>
-          <th style="padding:4px 4px;text-align:center;width:20px;font-size:8px">欠勤</th>
-          <th style="padding:4px 4px;text-align:center;width:26px;font-size:8px">残業</th>
-          <th style="padding:4px 4px;text-align:center;width:28px;font-size:8px">有給残</th>
-        </tr>
-      </thead>
-      <tbody>${bodyRows}</tbody>
-    </table>
-    <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:8.5px;color:#666;border-top:1px solid #eee;padding-top:6px">
-      <span>■ 凡例：</span>
-      <span style="color:#1a7a3a">出 = 出勤</span>
-      <span style="color:#1a4bbf">有給 = 有給（全日）</span>
-      <span style="color:#b85010">半休 = 半日有給</span>
-      <span style="color:#c0202a">欠 = 欠勤</span>
-      <span style="color:#8888cc">公休・休 = 休日</span>
-      <span style="margin-left:8px;color:#c0202a">有給残「不足」= 年間5日義務未達成（労基法39条）</span>
-    </div>
-    <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-      <div style="border:.5px solid #ccc;border-radius:5px;padding:6px 8px"><div style="font-size:8px;color:#888;margin-bottom:12px">確認（管理者）</div><div style="border-top:.5px solid #bbb;padding-top:3px;font-size:8px;color:#bbb">署名・捺印</div></div>
-      <div style="border:.5px solid #ccc;border-radius:5px;padding:6px 8px"><div style="font-size:8px;color:#888;margin-bottom:12px">承認（役員）</div><div style="border-top:.5px solid #bbb;padding-top:3px;font-size:8px;color:#bbb">署名・捺印</div></div>
-      <div style="border:.5px solid #ccc;border-radius:5px;padding:6px 8px"><div style="font-size:8px;color:#888;margin-bottom:12px">受領（社長）</div><div style="border-top:.5px solid #bbb;padding-top:3px;font-size:8px;color:#bbb">署名・捺印</div></div>
-    </div>
-  </div>`;
-
-  document.getElementById('print-preview').innerHTML=html;
-  document.getElementById('print-area').innerHTML=html;
-  setTimeout(()=>window.print(),200);
+  const dayHd=Array.from({length:dim},(_,i)=>{const d=i+1,dow=new Date(sy+'-'+p(sm)+'-'+p(d)+'T00:00:00').getDay();const c=dow===0?'#ff8080':dow===6?'#8080ff':'rgba(255,255,255,.8)';return`<th style="padding:2px 1px;text-align:center;width:16px;font-size:7px;color:${c};font-weight:400">${d}</th>`;}).join('');
+  const html=`<div style="font-family:'Noto Sans JP',sans-serif;padding:10px 12px;font-size:10px;color:#111;max-width:740px;margin:0 auto"><div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #1a2744;padding-bottom:5px;margin-bottom:7px"><div><div style="font-size:14px;font-weight:500;color:#1a2744">重松工業株式会社</div><div style="font-size:9px;color:#666;margin-top:1px">勤怠サマリー　${sy}年${sm}月分（1〜${dim}日締め）　支払日：${payStr}</div></div><div style="font-size:8px;color:#aaa">出力：${todayStr}</div></div><table style="width:100%;border-collapse:collapse;table-layout:fixed"><thead><tr style="background:#1a2744;color:#fff"><th style="padding:3px 5px;text-align:left;width:62px;font-size:9px">氏名</th><th style="padding:3px 3px;text-align:left;width:24px;font-size:8px">雇用</th>${dayHd}<th style="padding:3px 4px;text-align:center;width:20px;font-size:8px;border-left:1px solid rgba(255,255,255,.3)">出勤</th><th style="padding:3px 4px;text-align:center;width:18px;font-size:8px">有給</th><th style="padding:3px 4px;text-align:center;width:18px;font-size:8px">欠勤</th><th style="padding:3px 4px;text-align:center;width:24px;font-size:8px">残業</th><th style="padding:3px 4px;text-align:center;width:26px;font-size:8px">有給残</th></tr></thead><tbody>${empRows}</tbody></table><div style="margin-top:8px;font-size:8px;color:#777;border-top:1px solid #eee;padding-top:5px;display:flex;gap:10px;flex-wrap:wrap"><span>凡例：</span><span style="color:#1a6a3a">出=出勤</span><span style="color:#1a4bbf">有給=全日</span><span style="color:#b85010">半休=半日有給</span><span style="color:#c0202a">欠=欠勤</span><span style="color:#8888bb">休/公休=休日</span><span style="color:#c0202a;margin-left:6px">不足=年間5日義務未達（労基法39条）</span></div><div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">${['確認（管理者）','承認（役員）','受領（社長）'].map(l=>'<div style="border:.5px solid #ccc;border-radius:5px;padding:6px 8px"><div style="font-size:8px;color:#888;margin-bottom:14px">'+l+'</div><div style="border-top:.5px solid #bbb;padding-top:3px;font-size:7px;color:#bbb">署名・捺印</div></div>').join('')}</div></div>`;
+  document.getElementById('print-preview').innerHTML=html;document.getElementById('print-area').innerHTML=html;setTimeout(()=>window.print(),200);
 }
+
+/* ===== 従業員編集モーダル ===== */
+function editEmpModal(id){const emp=window.employees.find(e=>e.id===id);if(!emp)return;document.getElementById('edit-emp-id').value=emp.id;document.getElementById('edit-emp-no').value=emp.no;document.getElementById('edit-emp-name').value=emp.name;document.getElementById('edit-emp-dept').value=emp.dept||'';document.getElementById('edit-emp-etype').value=emp.etype;document.getElementById('edit-emp-insdate').value=emp.insDate;document.getElementById('edit-emp-ot-type').value=emp.otType;document.getElementById('edit-emp-sstart').value=emp.sstart||'08:00';document.getElementById('edit-emp-send').value=emp.send||'17:10';document.getElementById('edit-fg-shokutaku').style.display=emp.etype==='shokutaku'?'grid':'none';document.getElementById('edit-emp-result').innerHTML='';document.getElementById('edit-emp-overlay').classList.add('show');}
+function editEmpEtypeChange(){document.getElementById('edit-fg-shokutaku').style.display=document.getElementById('edit-emp-etype').value==='shokutaku'?'grid':'none';}
+function closeEmpEditModal(){document.getElementById('edit-emp-overlay').classList.remove('show');}
+function saveEmpEdit(){
+  const id=document.getElementById('edit-emp-id').value,no=document.getElementById('edit-emp-no').value.trim(),name=document.getElementById('edit-emp-name').value.trim(),insDate=document.getElementById('edit-emp-insdate').value,etype=document.getElementById('edit-emp-etype').value,otType=document.getElementById('edit-emp-ot-type').value,result=document.getElementById('edit-emp-result');
+  if(!no||!name||!insDate){result.innerHTML='<span style="color:#c0202a">番号・氏名・保険取得日は必須です</span>';return;}
+  const idx=window.employees.findIndex(e=>e.id===id);if(idx<0)return;
+  const emp={...window.employees[idx],no,name,dept:document.getElementById('edit-emp-dept').value,etype,insDate,otType};
+  if(etype==='shokutaku'){emp.sstart=document.getElementById('edit-emp-sstart').value;emp.send=document.getElementById('edit-emp-send').value;}
+  window.employees[idx]=emp;result.innerHTML='<span style="color:#888">保存中...</span>';
+  if(window.fsSetEmployee){window.fsSetEmployee(emp).then(()=>{result.innerHTML='<span style="color:#1a7a3a">✓ Firebaseに保存しました</span>';populateSels();renderEmployees();setTimeout(()=>closeEmpEditModal(),1200);}).catch(()=>{result.innerHTML='<span style="color:#c0202a">⚠ 保存失敗</span>';});}
+  else{populateSels();renderEmployees();closeEmpEditModal();}
+  showToast(name+' の情報を更新しました');
+}
+/* ===== パスワード変更 ===== */
+function showPwModal(){['pw-current','pw-new','pw-confirm'].forEach(id=>document.getElementById(id).value='');document.getElementById('pw-error').textContent='';document.getElementById('pw-overlay').classList.add('show');setTimeout(()=>document.getElementById('pw-current').focus(),50);}
+function closePwModal(){document.getElementById('pw-overlay').classList.remove('show');}
+function changePw(){const cur=document.getElementById('pw-current').value,nw=document.getElementById('pw-new').value,cf=document.getElementById('pw-confirm').value,err=document.getElementById('pw-error');if(cur!==ADMIN_CMD){err.textContent='現在のコマンドが正しくありません';return;}if(nw.length<4){err.textContent='新しいコマンドは4文字以上にしてください';return;}if(nw!==cf){err.textContent='新しいコマンドが一致しません';return;}ADMIN_CMD=nw;closePwModal();showToast('コマンドを変更しました');}
+
+
+function sw(name,el){
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('sec-'+name).classList.add('on');el.classList.add('on');
+  if(name==='dashboard')renderDashboard();
+  if(name==='records'){editingId=null;addingRow=false;renderRecords();}
+  if(name==='paidleave')renderPaidLeave();
+  if(name==='calendar')renderCalendar();
+  if(name==='employees')renderEmployees();
+  if(name==='punch')renderPunchToday();
+}
+function populateSels(){
+  ['rec-emp'].forEach(id=>{const s=document.getElementById(id);if(s)s.innerHTML=window.employees.map(e=>`<option value="${e.id}">${e.name}（${e.no}）</option>`).join('');});
+}
+function initMonths(){
+  ['rec-month','print-month'].forEach(id=>{const s=document.getElementById(id);if(!s)return;const opts=[];for(let i=0;i<12;i++){const d=new Date(today.getFullYear(),today.getMonth()-i,1);const v=d.getFullYear()+'-'+p(d.getMonth()+1);opts.push(`<option value="${v}" ${i===0?'selected':''}>${d.getFullYear()}年${d.getMonth()+1}月</option>`);}s.innerHTML=opts.join('');});
+}
+function initYears(){const s=document.getElementById('cal-year'),yr=today.getFullYear();s.innerHTML=[yr-1,yr,yr+1].map(y=>`<option value="${y}" ${y===yr?'selected':''}>${y}年</option>`).join('');}
+function updateClock(){
+  const n=new Date();
+  document.getElementById('punch-clock').textContent=p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds());
+  document.getElementById('hclock').innerHTML=n.getFullYear()+'.'+(n.getMonth()+1)+'.'+n.getDate()+'&nbsp;'+WDAYS[n.getDay()]+'<br>'+p(n.getHours())+':'+p(n.getMinutes());
+  document.getElementById('punch-date-s').textContent=n.getFullYear()+'年'+(n.getMonth()+1)+'月'+n.getDate()+'日（'+WDAYS[n.getDay()]+'）';
+}
+/* ===== PWA Service Worker ===== */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+initNumpad();populateSels();initMonths();initYears();
+renderPunchToday();renderEmployees();
+setInterval(updateClock,1000);updateClock();
+</script>
+</body>
+</html>
