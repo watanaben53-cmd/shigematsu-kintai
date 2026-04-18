@@ -213,7 +213,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 @media print{
   body>*{display:none!important}
   #print-area{display:block!important;position:static!important}
-  @page{size:A4 landscape;margin:8mm}
+  @page{size:A4 portrait;margin:6mm}
 }
 #print-area{display:none}
 /* ===== MOBILE ===== */
@@ -354,17 +354,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
       <tbody id="cal-list-body"></tbody>
     </table></div>
   </div>
-  <div id="cal-modal" style="display:none">
-    <div class="panel" style="border-color:#3a5abf">
-      <div class="ptitle">日付設定 <span id="modal-lbl" class="badge b-navy"></span></div>
-      <div class="frow">
-        <div class="fg"><label>種別</label><select id="modal-type"><option value="holiday">祝日</option><option value="company_off">会社公休</option><option value="special">特別休暇</option></select></div>
-        <div class="fg"><label>名称</label><input type="text" id="modal-name" placeholder="例：創立記念日"></div>
-      </div>
-      <div class="fg" style="margin-bottom:9px"><label>対象</label><select id="modal-target"><option value="all">全員共通</option><option value="shokutaku">嘱託職員のみ</option><option value="regular">正社員・契約社員のみ</option></select></div>
-      <div class="flex"><button class="btn btn-p" onclick="saveCalDay()">保存</button><button class="btn" onclick="closeModal()">キャンセル</button><button class="btn btn-d" onclick="deleteCalDay()">削除</button></div>
-    </div>
-  </div>
 </div>
 
 <!-- ===== EMPLOYEES ===== -->
@@ -403,14 +392,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 <!-- ===== PRINT ===== -->
 <div id="sec-print" class="sec">
   <div class="panel">
-    <div class="ptitle">A4出勤簿 印刷</div>
-    <div class="frow">
-      <div class="fg"><label>従業員</label><select id="print-emp"></select></div>
-      <div class="fg"><label>対象月</label><select id="print-month"></select></div>
+    <div class="ptitle">勤怠サマリー 一括印刷</div>
+    <div class="flex" style="margin-bottom:6px">
+      <div class="fg" style="flex:1;max-width:200px"><label>対象月</label><select id="print-month" style="font-size:12px;padding:6px 8px"></select></div>
     </div>
-    <div class="flex" style="margin-bottom:12px">
-      <button class="btn btn-p" onclick="doPrint()">印刷（A4横）</button>
-      <span style="font-size:10px;color:var(--text3)">1日〜月末締め・翌月10日払い</span>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px">従業員全員分を1枚のA4用紙に一括印刷します（縦向き）</div>
+    <div class="flex" style="margin-bottom:14px">
+      <button class="btn btn-p" style="padding:9px 22px;font-size:13px" onclick="doPrint()">全員分を一括印刷</button>
     </div>
     <div id="print-preview"></div>
   </div>
@@ -488,6 +476,44 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
     </div>
   </div>
 </div>
+<!-- カレンダー日付設定モーダル -->
+<div class="overlay" id="cal-overlay">
+  <div class="dialog" style="width:340px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-size:13px;font-weight:500;color:var(--text1)" id="modal-lbl-date"></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px" id="modal-lbl-dow"></div>
+      </div>
+      <span id="modal-lbl" class="badge b-navy" style="display:none"></span>
+    </div>
+    <div class="fg" style="margin-bottom:9px">
+      <label>種別</label>
+      <select id="modal-type" style="font-size:13px;padding:8px 10px">
+        <option value="holiday">祝日</option>
+        <option value="company_off">会社公休</option>
+        <option value="special">特別休暇</option>
+      </select>
+    </div>
+    <div class="fg" style="margin-bottom:9px">
+      <label>名称</label>
+      <input type="text" id="modal-name" placeholder="例：創立記念日、夏季休暇">
+    </div>
+    <div class="fg" style="margin-bottom:13px">
+      <label>対象</label>
+      <select id="modal-target">
+        <option value="all">全員共通</option>
+        <option value="shokutaku">嘱託職員のみ</option>
+        <option value="regular">正社員・契約社員のみ</option>
+      </select>
+    </div>
+    <div class="flex">
+      <button class="btn btn-p" onclick="saveCalDay()">設定する</button>
+      <button class="btn" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-d" onclick="deleteCalDay()">削除</button>
+    </div>
+  </div>
+</div>
+
 <!-- CMD DIALOG -->
 <div class="toast" id="toast"></div>
 <div class="overlay" id="cmd-overlay">
@@ -761,8 +787,21 @@ function renderCalList(){
   document.getElementById('cal-count').textContent=es.length+'件';
   document.getElementById('cal-list-body').innerHTML=es.map(([d,v])=>`<tr><td>${d}</td><td><span class="badge ${v.type==='holiday'?'b-blue':'b-navy'}">${tL[v.type]||v.type}</span></td><td>${v.name||''}</td><td>${tgL[v.target]||v.target}</td><td><button class="btn btn-sm btn-d" onclick="rmCal('${d}')">削除</button></td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;padding:14px;color:var(--text3)">登録なし</td></tr>';
 }
-function openCal(ds){modalDate=ds;document.getElementById('modal-lbl').textContent=ds;const cd=window.calDays[ds];document.getElementById('modal-type').value=cd?cd.type:'company_off';document.getElementById('modal-name').value=cd?cd.name||'':'';document.getElementById('modal-target').value=cd?cd.target:'all';document.getElementById('cal-modal').style.display='block';}
-function closeModal(){document.getElementById('cal-modal').style.display='none';modalDate='';}
+function openCal(ds){
+  modalDate=ds;
+  const cd=window.calDays[ds];
+  const d=new Date(ds+'T00:00:00');
+  const dowJ=['日','月','火','水','木','金','土'];
+  document.getElementById('modal-lbl').textContent=ds;
+  document.getElementById('modal-lbl-date').textContent=d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日';
+  document.getElementById('modal-lbl-dow').textContent=dowJ[d.getDay()]+'曜日'+(isWE(ds)?'（休日）':'（平日）');
+  document.getElementById('modal-type').value=cd?cd.type:'company_off';
+  document.getElementById('modal-name').value=cd?cd.name||'':'';
+  document.getElementById('modal-target').value=cd?cd.target:'all';
+  document.getElementById('cal-overlay').classList.add('show');
+  setTimeout(()=>document.getElementById('modal-name').focus(),80);
+}
+function closeModal(){document.getElementById('cal-overlay').classList.remove('show');modalDate='';}
 function saveCalDay(){if(!modalDate)return;window.calDays[modalDate]={type:document.getElementById('modal-type').value,name:document.getElementById('modal-name').value,target:document.getElementById('modal-target').value};closeModal();renderCalendar();}
 function deleteCalDay(){if(!modalDate)return;delete window.calDays[modalDate];closeModal();renderCalendar();}
 function rmCal(d){if(!confirm('削除しますか？'))return;delete window.calDays[d];renderCalendar();}
@@ -787,75 +826,115 @@ function rmEmp(id){if(!confirm('削除しますか？'))return;employees=window.
 
 /* ===================== PRINT ===================== */
 function doPrint(){
-  const empId=document.getElementById('print-emp').value,monStr=document.getElementById('print-month').value,emp=ge(empId);if(!emp)return;
-  const[sy,sm]=monStr.split('-').map(Number),dim=new Date(sy,sm,0).getDate();
-  let tw=0,tot=0,tp=0,ts2=0;
-  const etL={full:'正社員',shokutaku:'嘱託職員',part:'パートタイム',contract:'契約社員'},otL={actual:'実績残業',fixed:'見込み残業（固定）',none:'残業なし'};
-  const tL={work:'出勤',paid:'有給',half_am:'午前半休',half_pm:'午後半休',absence:'欠勤'};
-  const dc=['#c0202a','#333','#333','#333','#333','#333','#1a4bbf'];
-  const rowsH=Array.from({length:dim},(_,i)=>{
-    const d=i+1,ds=sy+'-'+p(sm)+'-'+p(d),dow=new Date(ds+'T00:00:00').getDay(),offDay=isOff(ds,emp.etype),cd=window.calDays[ds];
-    if(!offDay)ts2++;
-    const rec=window.records.find(r=>r.empId===empId&&r.date===ds);
-    let type='',start='',end='',wm=0,ot=0,remark='';
-    if(offDay)type=dow===0||dow===6?'休日':cd?cd.name:'会社公休';
-    else if(rec){type=tL[rec.type]||rec.type;start=rec.start||'';end=rec.end||'';wm=rec.workMin||0;ot=rec.otMin||0;remark=rec.reason||'';tw+=wm;tot+=ot;tp+=(rec.paidDays||0);}
-    const bg=offDay?'#f0f4ff':rec?.type==='paid'||rec?.type==='half_am'||rec?.type==='half_pm'?'#eef6ff':rec?.type==='absence'?'#fff8f0':'#fff';
-    const otDisp=emp.otType==='actual'?(ot?hm(ot):''):emp.otType==='fixed'?'固定':'';
-    const otColor=emp.otType==='actual'&&ot?'#1a4bbf':'#888';
-    return`<tr style="background:${bg};border-bottom:.5px solid #e0e0e0"><td style="padding:2px 4px;text-align:center;font-weight:500;color:${dc[dow]}">${d}</td><td style="padding:2px 4px;text-align:center;color:${dc[dow]}">${WDAYS[dow]}</td><td style="padding:2px 4px;text-align:center;font-size:9.5px">${type}</td><td style="padding:2px 4px;text-align:center">${start}</td><td style="padding:2px 4px;text-align:center">${end}</td><td style="padding:2px 4px;text-align:center">${wm?hm(wm):''}</td><td style="padding:2px 4px;text-align:center;color:${otColor};font-weight:500">${otDisp}</td><td style="padding:2px 4px;font-size:9px;color:#555">${remark||(offDay&&cd?cd.name:'')||''}</td><td style="padding:2px 4px;border:.5px solid #ccc;min-width:24px">&nbsp;</td></tr>`;
-  }).join('');
-  const annual=calcAL(emp.insDate),usedY=usedThisYear(empId),payD=new Date(sy,sm,10),payStr=payD.getFullYear()+'年'+(payD.getMonth()+1)+'月10日';
-  const html=`<div style="font-family:'Noto Sans JP',sans-serif;padding:14px 16px;font-size:10.5px;color:#111;max-width:920px;margin:0 auto">
-    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2.5px solid #1a2744;padding-bottom:7px;margin-bottom:8px">
-      <div><div style="font-size:17px;font-weight:500;color:#1a2744;letter-spacing:.04em">重松工業株式会社</div><div style="font-size:11px;color:#555;margin-top:2px">出勤簿　${sy}年${sm}月分（1日〜${dim}日締め）</div></div>
-      <div style="text-align:right;font-size:10px;color:#555"><div>氏名：<b style="color:#1a2744;font-size:13px">${emp.name}</b>&ensp;<span style="background:#e8ecf8;color:#1a2744;padding:2px 5px;border-radius:4px;font-size:9px">${etL[emp.etype]||emp.etype}</span>&ensp;<span style="background:#f0eafa;color:#6a20af;padding:2px 5px;border-radius:4px;font-size:9px">${otL[emp.otType]||'-'}</span></div><div style="margin-top:2px">番号：${emp.no}&emsp;部署：${emp.dept||'—'}</div><div style="margin-top:2px;color:#999">支払日：${payStr}</div></div>
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:10px"><thead><tr style="background:#1a2744;color:#fff"><th style="padding:3px 4px;text-align:center;width:20px">日</th><th style="padding:3px 4px;text-align:center;width:14px">曜</th><th style="padding:3px 4px;text-align:center;width:40px">区分</th><th style="padding:3px 4px;text-align:center;width:32px">始業</th><th style="padding:3px 4px;text-align:center;width:32px">終業</th><th style="padding:3px 4px;text-align:center;width:36px">実働</th><th style="padding:3px 4px;text-align:center;width:34px">残業</th><th style="padding:3px 4px;text-align:left">備考・有給理由</th><th style="padding:3px 4px;text-align:center;width:22px">印</th></tr></thead><tbody>${rowsH}</tbody></table>
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px;border-top:2.5px solid #1a2744;padding-top:9px">${[['所定出勤日数',ts2+'日','#1a2744'],['総実働時間',hm(tw),'#1a2744'],['残業時間',emp.otType==='actual'?hm(tot):otL[emp.otType],'#1a4bbf'],['有給取得',tp+'日','#1a5abf'],['有給残日数',(annual-usedY)+'日','#1a7a3a']].map(([l,v,c])=>`<div style="background:#f0f4f8;border-radius:5px;padding:7px 9px"><div style="font-size:8.5px;color:#666;margin-bottom:2px">${l}</div><div style="font-size:14px;font-weight:500;color:${c}">${v}</div></div>`).join('')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:11px">${['本人確認（署名）','直属上長（確認印）','管理部（確認印）'].map(l=>`<div style="border:.5px solid #ccc;border-radius:5px;padding:8px"><div style="font-size:8.5px;color:#888;margin-bottom:16px">${l}</div><div style="border-top:.5px solid #bbb;padding-top:3px;font-size:8px;color:#bbb">署名・捺印欄</div></div>`).join('')}</div>
-    <div style="text-align:right;margin-top:6px;font-size:8.5px;color:#ccc">重松工業株式会社 勤怠管理システム / 出力日：${todayStr}</div>
-  </div>`;
-  document.getElementById('print-preview').innerHTML=html;document.getElementById('print-area').innerHTML=html;setTimeout(()=>window.print(),200);
-}
+  const monStr=document.getElementById('print-month').value;
+  const[sy,sm]=monStr.split('-').map(Number);
+  const dim=new Date(sy,sm,0).getDate();
+  const payD=new Date(sy,sm,10);
+  const payStr=payD.getFullYear()+'年'+(payD.getMonth()+1)+'月10日';
+  const tL={work:'出勤',paid:'有給',half_am:'午前休',half_pm:'午後休',absence:'欠勤'};
+  const etL={full:'正社員',shokutaku:'嘱託',part:'パート',contract:'契約'};
+  const otL={actual:'実績',fixed:'見込み',none:'なし'};
 
-/* ===================== TAB / INIT ===================== */
-function sw(name,el){
-  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  document.getElementById('sec-'+name).classList.add('on');el.classList.add('on');
-  if(name==='dashboard')renderDashboard();
-  if(name==='records'){editingId=null;addingRow=false;renderRecords();}
-  if(name==='paidleave')renderPaidLeave();
-  if(name==='calendar')renderCalendar();
-  if(name==='employees')renderEmployees();
-  if(name==='punch')renderPunchToday();
-}
-function populateSels(){
-  ['rec-emp','print-emp'].forEach(id=>{const s=document.getElementById(id);if(s)s.innerHTML=window.employees.map(e=>`<option value="${e.id}">${e.name}（${e.no}）</option>`).join('');});
-}
-function initMonths(){
-  ['rec-month','print-month'].forEach(id=>{const s=document.getElementById(id);if(!s)return;const opts=[];for(let i=0;i<12;i++){const d=new Date(today.getFullYear(),today.getMonth()-i,1);const v=d.getFullYear()+'-'+p(d.getMonth()+1);opts.push(`<option value="${v}" ${i===0?'selected':''}>${d.getFullYear()}年${d.getMonth()+1}月</option>`);}s.innerHTML=opts.join('');});
-}
-function initYears(){const s=document.getElementById('cal-year'),yr=today.getFullYear();s.innerHTML=[yr-1,yr,yr+1].map(y=>`<option value="${y}" ${y===yr?'selected':''}>${y}年</option>`).join('');}
-function updateClock(){
-  const n=new Date();
-  document.getElementById('punch-clock').textContent=p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds());
-  document.getElementById('hclock').innerHTML=n.getFullYear()+'.'+(n.getMonth()+1)+'.'+n.getDate()+'&nbsp;'+WDAYS[n.getDay()]+'<br>'+p(n.getHours())+':'+p(n.getMinutes());
-  document.getElementById('punch-date-s').textContent=n.getFullYear()+'年'+(n.getMonth()+1)+'月'+n.getDate()+'日（'+WDAYS[n.getDay()]+'）';
-}
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').then(reg => {
-    reg.update();
-  }).catch(() => {});
-  /* 古いキャッシュを全削除してから新しいSWを有効化 */
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    console.log('SW updated');
+  // 全員分の集計
+  const empRows = window.employees.map(emp=>{
+    let workDays=0,paidDays=0,absentDays=0,otMin=0,scheduledDays=0;
+    const dailyData=[];
+    for(let d=1;d<=dim;d++){
+      const ds=sy+'-'+p(sm)+'-'+p(d);
+      const dow=new Date(ds+'T00:00:00').getDay();
+      const offDay=isOff(ds,emp.etype);
+      const cd=window.calDays[ds];
+      const rec=window.records.find(r=>r.empId===emp.id&&r.date===ds);
+      if(!offDay) scheduledDays++;
+      let cell='',cellStyle='';
+      if(offDay){
+        cell=dow===0||dow===6?'休':'公休';
+        if(cd) cell=cd.name?cd.name.slice(0,3):'公休';
+        cellStyle='color:#8888cc;background:#f4f6ff';
+      } else if(rec){
+        if(rec.type==='work'){
+          cell='出';cellStyle='color:#1a7a3a';
+          workDays++;
+          if(rec.otMin&&emp.otType==='actual'){otMin+=rec.otMin;}
+        } else if(rec.type==='paid'){cell='有給';cellStyle='color:#1a4bbf;background:#eef4ff';paidDays+=1;}
+        else if(rec.type==='half_am'||rec.type==='half_pm'){cell='半休';cellStyle='color:#b85010;background:#fff8f0';paidDays+=0.5;}
+        else if(rec.type==='absence'){cell='欠';cellStyle='color:#c0202a';absentDays++;}
+      } else {
+        cell='';cellStyle='color:#ccc';
+      }
+      dailyData.push({d,dow,cell,cellStyle,offDay});
+    }
+    const annual=calcAL(emp.insDate);
+    const usedY=usedThisYear(emp.id);
+    return{emp,workDays,paidDays,absentDays,otMin,scheduledDays,dailyData,annual,usedY,remPaid:annual-usedY};
   });
+
+  // カレンダーヘッダー（日付）
+  const dayHeaders=Array.from({length:dim},(_,i)=>{
+    const d=i+1,ds=sy+'-'+p(sm)+'-'+p(d);
+    const dow=new Date(ds+'T00:00:00').getDay();
+    const c=dow===0?'#c0202a':dow===6?'#1a4bbf':'#555';
+    return`<th style="padding:2px 1px;text-align:center;width:18px;font-size:8px;color:${c};font-weight:400">${d}<br><span style="font-size:7px">${['日','月','火','水','木','金','土'][dow]}</span></th>`;
+  }).join('');
+
+  // 各従業員の行
+  const bodyRows=empRows.map(({emp,workDays,paidDays,absentDays,otMin,scheduledDays,dailyData,annual,usedY,remPaid})=>{
+    const needed=Math.max(0,5-usedY);
+    const alertStyle=needed>0?'color:#c0202a;font-weight:500':'';
+    const otDisp=emp.otType==='actual'?hm(otMin):emp.otType==='fixed'?'固定':'—';
+    const cells=dailyData.map(({cell,cellStyle,offDay})=>`<td style="padding:1px;text-align:center;font-size:8px;${cellStyle};border-right:.5px solid #eee;${offDay?'background:#f4f6ff':''}">${cell}</td>`).join('');
+    return`<tr style="border-bottom:.5px solid #e8e8e8">
+      <td style="padding:3px 5px;font-size:10px;white-space:nowrap;font-weight:500;min-width:60px">${emp.name}</td>
+      <td style="padding:3px 4px;font-size:9px;color:var(--text2);white-space:nowrap">${etL[emp.etype]||''}</td>
+      ${cells}
+      <td style="padding:3px 5px;text-align:center;font-size:10px;font-weight:500;color:#1a7a3a;border-left:1px solid #ddd">${workDays}</td>
+      <td style="padding:3px 5px;text-align:center;font-size:10px;color:#1a4bbf">${paidDays>0?paidDays:''}</td>
+      <td style="padding:3px 5px;text-align:center;font-size:10px;color:#b85010">${absentDays>0?absentDays:''}</td>
+      <td style="padding:3px 5px;text-align:center;font-size:10px;color:#1a6abf">${otDisp}</td>
+      <td style="padding:3px 5px;text-align:center;font-size:10px;${alertStyle}">${remPaid}<span style="font-size:8px">日</span>${needed>0?'<br><span style="font-size:7px;color:#c0202a">不足'+needed+'日</span>':''}</td>
+    </tr>`;
+  }).join('');
+
+  const html=`<div style="font-family:'Noto Sans JP',sans-serif;padding:12px 14px;font-size:10px;color:#111;max-width:760px;margin:0 auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #1a2744;padding-bottom:6px;margin-bottom:8px">
+      <div>
+        <div style="font-size:15px;font-weight:500;color:#1a2744;letter-spacing:.04em">重松工業株式会社</div>
+        <div style="font-size:10px;color:#666;margin-top:1px">勤怠サマリー　${sy}年${sm}月分（1日〜${dim}日締め）　支払日：${payStr}</div>
+      </div>
+      <div style="font-size:9px;color:#999">出力日：${todayStr}</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed">
+      <thead>
+        <tr style="background:#1a2744;color:#fff">
+          <th style="padding:4px 5px;text-align:left;width:62px;font-size:9px">氏名</th>
+          <th style="padding:4px 3px;text-align:left;width:26px;font-size:8px">雇用</th>
+          ${dayHeaders}
+          <th style="padding:4px 4px;text-align:center;width:22px;font-size:8px;border-left:1px solid rgba(255,255,255,.3)">出勤</th>
+          <th style="padding:4px 4px;text-align:center;width:20px;font-size:8px">有給</th>
+          <th style="padding:4px 4px;text-align:center;width:20px;font-size:8px">欠勤</th>
+          <th style="padding:4px 4px;text-align:center;width:26px;font-size:8px">残業</th>
+          <th style="padding:4px 4px;text-align:center;width:28px;font-size:8px">有給残</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+    <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:8.5px;color:#666;border-top:1px solid #eee;padding-top:6px">
+      <span>■ 凡例：</span>
+      <span style="color:#1a7a3a">出 = 出勤</span>
+      <span style="color:#1a4bbf">有給 = 有給（全日）</span>
+      <span style="color:#b85010">半休 = 半日有給</span>
+      <span style="color:#c0202a">欠 = 欠勤</span>
+      <span style="color:#8888cc">公休・休 = 休日</span>
+      <span style="margin-left:8px;color:#c0202a">有給残「不足」= 年間5日義務未達成（労基法39条）</span>
+    </div>
+    <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div style="border:.5px solid #ccc;border-radius:5px;padding:6px 8px"><div style="font-size:8px;color:#888;margin-bottom:12px">確認（管理者）</div><div style="border-top:.5px solid #bbb;padding-top:3px;font-size:8px;color:#bbb">署名・捺印</div></div>
+      <div style="border:.5px solid #ccc;border-radius:5px;padding:6px 8px"><div style="font-size:8px;color:#888;margin-bottom:12px">承認（役員）</div><div style="border-top:.5px solid #bbb;padding-top:3px;font-size:8px;color:#bbb">署名・捺印</div></div>
+      <div style="border:.5px solid #ccc;border-radius:5px;padding:6px 8px"><div style="font-size:8px;color:#888;margin-bottom:12px">受領（社長）</div><div style="border-top:.5px solid #bbb;padding-top:3px;font-size:8px;color:#bbb">署名・捺印</div></div>
+    </div>
+  </div>`;
+
+  document.getElementById('print-preview').innerHTML=html;
+  document.getElementById('print-area').innerHTML=html;
+  setTimeout(()=>window.print(),200);
 }
-initNumpad();populateSels();initMonths();initYears();
-renderPunchToday();renderEmployees();
-setInterval(updateClock,1000);updateClock();
-</script>
-</body>
-</html>
