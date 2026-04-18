@@ -251,6 +251,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
   </div>
   <div class="hdr-right">
     <div class="sync-label" id="sync-label"><span class="sync-dot pending" id="sync-dot"></span><span id="sync-txt" style="font-size:9px;color:rgba(255,255,255,.5)">接続中</span></div><div class="hdr-clock" id="hclock"></div>
+    <button class="cmd-btn" id="pw-change-btn" onclick="showPwModal()" style="display:none;background:rgba(200,146,26,.25);border-color:rgba(200,146,26,.4);color:#f0c060;font-size:9px">PW変更</button>
     <button class="cmd-btn" id="cmd-btn" onclick="showCmd()">管理者</button>
   </div>
 </div>
@@ -384,7 +385,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
       <div class="fg"><label>嘱託 始業</label><input type="time" id="emp-sstart" value="08:00"></div>
       <div class="fg"><label>嘱託 終業</label><input type="time" id="emp-send" value="17:10"></div>
     </div>
-    <button class="btn btn-p" onclick="addEmployee()" style="margin-top:4px">追加</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn btn-p" onclick="addEmployee()" style="font-size:13px;padding:9px 22px">＋ 追加してFirebaseに記録</button>
+      <span style="font-size:11px;color:var(--text3)">入力後このボタンで保存されます</span>
+    </div>
+    <div id="emp-save-result" style="margin-top:8px;min-height:18px"></div>
   </div>
   <div class="panel">
     <div class="ptitle">従業員一覧</div>
@@ -415,6 +420,74 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 
 <div id="print-area"></div>
 
+
+<!-- 従業員編集モーダル -->
+<div class="overlay" id="edit-emp-overlay">
+  <div class="dialog" style="width:360px">
+    <div style="font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text1)">従業員情報を編集</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:13px">変更後「保存」を押してFirebaseに記録されます</div>
+    <input type="hidden" id="edit-emp-id">
+    <div class="frow" style="margin-bottom:8px">
+      <div class="fg"><label>従業員番号</label><input type="text" id="edit-emp-no" maxlength="6"></div>
+      <div class="fg"><label>氏名</label><input type="text" id="edit-emp-name"></div>
+    </div>
+    <div class="frow" style="margin-bottom:8px">
+      <div class="fg"><label>部署</label><input type="text" id="edit-emp-dept"></div>
+      <div class="fg"><label>雇用形態</label>
+        <select id="edit-emp-etype" onchange="editEmpEtypeChange()">
+          <option value="full">正社員</option>
+          <option value="shokutaku">嘱託職員</option>
+          <option value="part">パートタイム</option>
+          <option value="contract">契約社員</option>
+        </select>
+      </div>
+    </div>
+    <div class="frow" style="margin-bottom:8px">
+      <div class="fg"><label>社会保険取得日</label><input type="date" id="edit-emp-insdate"></div>
+      <div class="fg"><label>残業管理区分</label>
+        <select id="edit-emp-ot-type">
+          <option value="actual">実績残業あり</option>
+          <option value="fixed">見込み残業（固定）</option>
+          <option value="none">残業なし</option>
+        </select>
+      </div>
+    </div>
+    <div class="frow" id="edit-fg-shokutaku" style="display:none;margin-bottom:8px">
+      <div class="fg"><label>嘱託 始業</label><input type="time" id="edit-emp-sstart" value="08:00"></div>
+      <div class="fg"><label>嘱託 終業</label><input type="time" id="edit-emp-send" value="17:10"></div>
+    </div>
+    <div id="edit-emp-result" style="font-size:11px;min-height:18px;margin-bottom:9px"></div>
+    <div class="flex">
+      <button class="btn btn-p" onclick="saveEmpEdit()">Firebaseに保存</button>
+      <button class="btn" onclick="closeEmpEditModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- パスワード変更モーダル -->
+<div class="overlay" id="pw-overlay">
+  <div class="dialog">
+    <div style="font-size:13px;font-weight:500;margin-bottom:4px;color:var(--text1)">管理者コマンド変更</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:13px">新しいコマンドを設定してください（このセッション中のみ有効）</div>
+    <div class="fg" style="margin-bottom:8px">
+      <label>現在のコマンド</label>
+      <input type="password" id="pw-current" placeholder="現在のコマンド">
+    </div>
+    <div class="fg" style="margin-bottom:8px">
+      <label>新しいコマンド</label>
+      <input type="password" id="pw-new" placeholder="新しいコマンド（6文字以上）">
+    </div>
+    <div class="fg" style="margin-bottom:10px">
+      <label>新しいコマンド（確認）</label>
+      <input type="password" id="pw-confirm" placeholder="もう一度入力">
+    </div>
+    <div id="pw-error" style="font-size:11px;color:#c0202a;min-height:16px;margin-bottom:9px"></div>
+    <div class="flex">
+      <button class="btn btn-p" onclick="changePw()">変更する</button>
+      <button class="btn" onclick="closePwModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
 <!-- CMD DIALOG -->
 <div class="toast" id="toast"></div>
 <div class="overlay" id="cmd-overlay">
@@ -430,7 +503,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 <script>
 /* ===================== DATA & CONSTANTS ===================== */
 const WDAYS=['日','月','火','水','木','金','土'];
-const ADMIN_CMD='shigematsu2024'; /* ← 必要に応じて変更 */
+let ADMIN_CMD='shigematsu2024'; /* 管理者コマンド初期値 */ /* ← 必要に応じて変更 */
 const today=new Date();
 const todayStr=fd(today);
 let adminMode=false,modalDate='',curPaidEmp=null,editingId=null,addingRow=false;
@@ -508,6 +581,7 @@ function checkCmd(){
   if(document.getElementById('cmd-input').value===ADMIN_CMD){
     adminMode=true;
     document.getElementById('cmd-btn').textContent='管理者ログアウト';document.getElementById('cmd-btn').classList.add('unlocked');
+    document.getElementById('pw-change-btn').style.display='';
     document.getElementById('admin-bar').style.display='flex';document.getElementById('add-wrap').style.display='inline-flex';document.getElementById('ops-head').textContent='操作';
     document.getElementById('tab-employees').style.display='';
     closeCmd();renderRecords();
@@ -516,6 +590,7 @@ function checkCmd(){
 function lockAdmin(){
   adminMode=false;editingId=null;addingRow=false;
   document.getElementById('cmd-btn').textContent='管理者';
+  document.getElementById('pw-change-btn').style.display='none';
   document.getElementById('cmd-btn').classList.remove('unlocked');
   document.getElementById('admin-bar').style.display='none';
   document.getElementById('add-wrap').style.display='none';
@@ -697,7 +772,7 @@ function addNationalHolidays(){const yr=parseInt(document.getElementById('cal-ye
 function empEtypeChange(){document.getElementById('fg-shokutaku').style.display=document.getElementById('emp-etype').value==='shokutaku'?'grid':'none';}
 function renderEmployees(){
   const etL={full:'正社員',shokutaku:'嘱託職員',part:'パート',contract:'契約社員'},otL={actual:'実績残業',fixed:'見込み残業',none:'残業なし'},otC={actual:'b-blue',fixed:'b-purple',none:'b-gray'};
-  document.getElementById('emp-tbody').innerHTML=window.employees.map(e=>{const annual=calcAL(e.insDate);const ins=new Date(e.insDate);const months=Math.floor(((new Date())-ins)/(1000*60*60*24*30.44));return`<tr><td>${e.no}</td><td>${e.name}</td><td>${e.dept||'-'}</td><td><span class="badge ${e.etype==='shokutaku'?'b-amber':'b-blue'}">${etL[e.etype]||e.etype}</span></td><td><span class="badge ${otC[e.otType]||'b-gray'}">${otL[e.otType]||'-'}</span></td><td>${e.insDate}</td><td>${annual}日</td><td>${Math.floor(months/12)}年${months%12}ヶ月</td><td><button class="btn btn-sm btn-d" onclick="rmEmp('${e.id}')">削除</button></td></tr>`;}).join('');
+  document.getElementById('emp-tbody').innerHTML=window.employees.map(e=>{const annual=calcAL(e.insDate);const ins=new Date(e.insDate);const months=Math.floor(((new Date())-ins)/(1000*60*60*24*30.44));return`<tr><td>${e.no}</td><td>${e.name}</td><td>${e.dept||'-'}</td><td><span class="badge ${e.etype==='shokutaku'?'b-amber':'b-blue'}">${etL[e.etype]||e.etype}</span></td><td><span class="badge ${otC[e.otType]||'b-gray'}">${otL[e.otType]||'-'}</span></td><td>${e.insDate}</td><td>${annual}日</td><td>${Math.floor(months/12)}年${months%12}ヶ月</td><td style="white-space:nowrap"><button class="btn btn-sm btn-edit" onclick="editEmpModal('${e.id}')">編集</button> <button class="btn btn-sm btn-d" onclick="rmEmp('${e.id}')">削除</button></td></tr>`;}).join('');
 }
 function addEmployee(){
   const no=document.getElementById('emp-no').value.trim(),name=document.getElementById('emp-name').value.trim(),insDate=document.getElementById('emp-insdate').value,etype=document.getElementById('emp-etype').value,otType=document.getElementById('emp-ot-type').value;
