@@ -331,6 +331,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
       <div class="fg"><label>嘱託 始業</label><input type="time" id="emp-sstart" value="08:00"></div>
       <div class="fg"><label>嘱託 終業</label><input type="time" id="emp-send" value="17:10"></div>
     </div>
+    <div class="frow" style="margin-bottom:8px">
+      <div class="fg"><label>初期有給残日数（前回までの繰り越し残）</label><input type="number" id="emp-init-paid" value="0" min="0" max="40" placeholder="0"></div>
+      <div class="fg"><label>初期有給の付与日（直近の付与日）</label><input type="date" id="emp-init-grant-date"></div>
+    </div>
     <div class="flex" style="margin-top:8px">
       <button class="btn btn-p" onclick="addEmployee()" style="font-size:13px;padding:9px 20px">＋ 追加してFirebaseに記録</button>
     </div>
@@ -426,6 +430,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
     <div class="frow" id="edit-fg-shokutaku" style="display:none;margin-bottom:8px">
       <div class="fg"><label>嘱託 始業</label><input type="time" id="edit-emp-sstart" value="08:00"></div>
       <div class="fg"><label>嘱託 終業</label><input type="time" id="edit-emp-send" value="17:10"></div>
+    </div>
+    <div class="frow" style="margin-bottom:8px">
+      <div class="fg"><label>初期有給残日数（前回までの繰り越し残）</label><input type="number" id="edit-emp-init-paid" value="0" min="0" max="40"></div>
+      <div class="fg"><label>初期有給の付与日（直近の付与日）</label><input type="date" id="edit-emp-init-grant-date"></div>
     </div>
     <div id="edit-emp-result" style="font-size:11px;min-height:18px;margin-bottom:9px"></div>
     <div class="flex">
@@ -528,14 +536,125 @@ function calcWork(r,emp){
   return{workMin:wm,otMin:ot,paidDays:0,baseMin:bm};
 }
 
+/* ===== 有給繰り越し計算エンジン ===== */
+
+// 付与スケジュール（勤続月数 → 付与日数）
+var AL_SCHEDULE=[{m:6,d:10},{m:18,d:11},{m:30,d:12},{m:42,d:14},{m:54,d:16},{m:66,d:18},{m:78,d:20}];
+
+// 社会保険取得日から付与日のリストを生成（現在日まで）
+function getGrantHistory(insDateStr){
+  var ins=new Date(insDateStr+'T00:00:00');
+  var now=new Date();
+  var grants=[];
+  AL_SCHEDULE.forEach(function(s){
+    var grantDate=new Date(ins);
+    grantDate.setMonth(grantDate.getMonth()+s.m);
+    if(grantDate<=now){
+      grants.push({date:grantDate,days:s.d,dateStr:fmtD(grantDate)});
+    }
+  });
+  return grants;
+}
+
+// 現在の有給保有数を計算（繰り越し・MAX40日・取得済みを加味）
+function calcPaidLeaveBalance(emp){
+  var grants=getGrantHistory(emp.insDate);
+  if(grants.length===0)return{balance:0,grants:[],grantNow:0,usedTotal:0,carryOver:0,detail:[]};
+
+  // 全有給取得記録
+  var allUsed=window.records.filter(function(r){
+    return r.empId===emp.id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm');
+  }).sort(function(a,b){return a.date<b.date?-1:1;});
+
+  // 初期繰り越し（前回までの残日数）
+  var initPaid=Number(emp.initPaid||0);
+  var initGrantDate=emp.initGrantDate||null;
+
+  // 付与期ごとに計算
+  // 各期: 前の付与日〜次の付与日の間に取得した日数を消費
+  var detail=[];
+  var balance=initPaid; // 初期残日数からスタート
+
+  // 初期付与日より前の取得は initPaid から消費
+  var initBoundary=initGrantDate?new Date(initGrantDate+'T00:00:00'):new Date(grants[0].date.getTime());
+
+  // 各付与サイクルを処理
+  for(var i=0;i<grants.length;i++){
+    var g=grants[i];
+    var periodStart=i===0?initBoundary:grants[i-1].date;
+    var periodEnd=i<grants.length-1?grants[i+1].date:new Date(9999,0,1);
+
+    // この期間に付与（繰り越し＋新規付与、MAX40日）
+    if(i===0&&initGrantDate&&fmtD(g.date)===initGrantDate){
+      // 初期付与日と一致する場合、initPaidにg.daysを加算
+      balance=Math.min(balance+g.days,40);
+    } else if(!initGrantDate||g.date>initBoundary){
+      balance=Math.min(balance+g.days,40);
+    }
+
+    // この期間中の取得
+    var periodUsed=allUsed.filter(function(r){
+      var d=new Date(r.date+'T00:00:00');
+      return d>=periodStart&&d<g.date;
+    }).reduce(function(s,r){return s+r.paidDays;},0);
+
+    // 付与日以降〜次の付与日前の取得
+    var afterUsed=allUsed.filter(function(r){
+      var d=new Date(r.date+'T00:00:00');
+      return d>=g.date&&d<periodEnd;
+    }).reduce(function(s,r){return s+r.paidDays;},0);
+
+    detail.push({grantDate:g.dateStr,granted:g.days,balance:balance,periodUsed:periodUsed+afterUsed});
+    balance=Math.max(0,balance-afterUsed);
+  }
+
+  // 残高はMAX40日
+  balance=Math.min(balance,40);
+
+  // 今年度の付与（直近付与）
+  var latestGrant=grants[grants.length-1];
+  var grantNow=latestGrant?latestGrant.days:0;
+
+  // 今年度の取得数（直近付与日以降）
+  var usedSinceLastGrant=latestGrant?allUsed.filter(function(r){
+    return new Date(r.date+'T00:00:00')>=latestGrant.date;
+  }).reduce(function(s,r){return s+r.paidDays;},0):0;
+
+  // 次の付与日
+  var nextGrant=null;
+  var ins=new Date(emp.insDate+'T00:00:00');
+  var now2=new Date();
+  for(var j=0;j<AL_SCHEDULE.length;j++){
+    var d2=new Date(ins);
+    d2.setMonth(d2.getMonth()+AL_SCHEDULE[j].m);
+    if(d2>now2){nextGrant={date:fmtD(d2),days:AL_SCHEDULE[j].d};break;}
+  }
+
+  // 年間5日義務: 直近付与日から次の付与日までに5日取得する必要
+  var neededForObligation=Math.max(0,5-usedSinceLastGrant);
+
+  return{
+    balance:balance,
+    grants:grants,
+    grantNow:grantNow,
+    usedSinceLastGrant:usedSinceLastGrant,
+    neededForObligation:neededForObligation,
+    nextGrant:nextGrant,
+    latestGrant:latestGrant,
+    detail:detail,
+    allUsed:allUsed
+  };
+}
+
+// 後方互換用（ダッシュボード・印刷等で使用）
 function calcAL(ins){
-  const sc=[{m:6,d:10},{m:18,d:11},{m:30,d:12},{m:42,d:14},{m:54,d:16},{m:66,d:18},{m:78,d:20}];
-  const months=Math.floor(((new Date())-new Date(ins))/(1000*60*60*24*30.44));
-  let days=0;for(let i=sc.length-1;i>=0;i--){if(months>=sc[i].m){days=sc[i].d;break;}}
+  var sc=AL_SCHEDULE;
+  var months=Math.floor(((new Date())-new Date(ins))/(1000*60*60*24*30.44));
+  var days=0;for(var i=sc.length-1;i>=0;i--){if(months>=sc[i].m){days=sc[i].d;break;}}
   return days;
 }
 function usedThisYear(id){
-  const yr=today.getFullYear();
+  var yr=today.getFullYear();
   return window.records.filter(function(r){
     return r.empId===id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm')&&r.date&&r.date.indexOf(yr)===0;
   }).reduce(function(s,r){return s+r.paidDays;},0);
@@ -740,7 +859,9 @@ function renderDashboard(){
     '<div class="card"><div class="clabel">今月総残業</div><div class="cval">'+hm(tOT)+'</div><div class="csub">全員計</div></div>'+
     '<div class="card"><div class="clabel">今月有給取得</div><div class="cval">'+tP+'</div><div class="csub">日（全員計）</div></div>';
   document.getElementById('dash-tbody').innerHTML=window.employees.map(function(e){
-    var annual=calcAL(e.insDate),used=usedThisYear(e.id),rem=annual-used,needed=Math.max(0,5-used);
+    var annual=calcAL(e.insDate),used=usedThisYear(e.id);
+    var bal2=calcPaidLeaveBalance(e);
+    var rem=bal2.balance,needed=bal2.neededForObligation;
     var er=mR.filter(function(r){return r.empId===e.id;});
     var wd=workdays(y,m,e.etype);
     var act=er.filter(function(r){return r.type==='work';}).length;
@@ -891,31 +1012,71 @@ function saveAdd(empId,ds){
 function renderPaidLeave(){
   if(!curPaidEmp&&window.employees.length)curPaidEmp=window.employees[0].id;
   document.getElementById('pl-chips').innerHTML=window.employees.map(function(e){
-    return '<div class="chip '+(e.id===curPaidEmp?'on':'')+'" onclick="selPl(\''+e.id+'\')">'+e.name+'</div>';
+    return '<div class="chip '+(e.id===curPaidEmp?'on':'')+'" onclick="selPl(\'' +e.id+ '\')">'+e.name+'</div>';
   }).join('');
   var emp=ge(curPaidEmp);if(!emp){document.getElementById('pl-detail').innerHTML='';return;}
-  var annual=calcAL(emp.insDate),used=usedThisYear(emp.id),rem=annual-used,needed=Math.max(0,5-used);
-  var mpct=Math.min(100,Math.round(used/5*100));
+
+  var bal=calcPaidLeaveBalance(emp);
+  var balance=bal.balance;
+  var usedNow=bal.usedSinceLastGrant;
+  var needed=bal.neededForObligation;
+  var mpct=Math.min(100,Math.round(usedNow/5*100));
   var ins=new Date(emp.insDate);
   var months=Math.floor(((new Date())-ins)/(1000*60*60*24*30.44));
+
+  // アラート
   var aHtml=needed>0?
     '<div class="abox '+(needed>3?'abox-r':'abox-w')+'"><b>⚠</b><div><b>'+emp.name+'</b>：年間5日有給取得義務に対し残り<b>'+needed+'日</b>の取得が必要です（労基法39条5項）</div></div>':
     '<div class="abox abox-g"><b>✓</b><div>年間5日の有給取得義務を達成済みです</div></div>';
   document.getElementById('pl-alerts').innerHTML=aHtml;
+
+  // 次回付与情報
+  var nextGrantHtml='';
+  if(bal.nextGrant){
+    nextGrantHtml='<div style="background:#f0f4ff;border-radius:var(--r);padding:8px 12px;font-size:11px;color:#3a5abf;margin-bottom:10px">'+
+      '次回付与日：<b>'+bal.nextGrant.date+'</b>　付与予定：<b>'+bal.nextGrant.days+'日</b>'+
+      '（繰り越し分を含めMAX40日まで）</div>';
+  }
+
+  // 付与履歴テーブル
+  var grantRows=bal.grants.map(function(g,i){
+    return '<tr><td>'+g.dateStr+'</td><td>'+g.days+'日</td>'+
+      '<td>'+(i===0&&emp.initPaid?'繰り越し'+emp.initPaid+'日＋':'')+'新規'+g.days+'日</td>'+
+      '</tr>';
+  }).join('');
+
+  // 取得履歴
   var tL={paid:'全日',half_am:'午前半休',half_pm:'午後半休'};
-  var plR=window.records.filter(function(r){return r.empId===emp.id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm');}).sort(function(a,b){return a.date<b.date?-1:1;});
+  var plR=window.records.filter(function(r){
+    return r.empId===emp.id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm');
+  }).sort(function(a,b){return a.date<b.date?-1:1;});
+
   document.getElementById('pl-detail').innerHTML=
-    '<div class="panel"><div class="ptitle">'+emp.name+'　有給状況</div>'+
+    '<div class="panel">'+
+    '<div class="ptitle">'+emp.name+'　有給状況</div>'+
     '<div class="cards">'+
-    '<div class="card"><div class="clabel">年次有給付与</div><div class="cval">'+annual+'</div><div class="csub">日</div></div>'+
-    '<div class="card '+(needed>0?'warn':'ok')+'"><div class="clabel">取得済（今年度）</div><div class="cval">'+used+'</div><div class="csub">日／義務5日</div></div>'+
-    '<div class="card"><div class="clabel">残日数</div><div class="cval">'+rem+'</div><div class="csub">日</div></div>'+
-    '<div class="card"><div class="clabel">勤続</div><div class="cval" style="font-size:15px">'+Math.floor(months/12)+'年'+months%12+'ヶ月</div><div class="csub">'+emp.insDate+'</div></div>'+
+    '<div class="card '+(balance<=5?'warn':'ok')+'"><div class="clabel">現在の保有日数</div><div class="cval">'+balance+'</div><div class="csub">日（MAX40日）</div></div>'+
+    '<div class="card '+(needed>0?'warn':'ok')+'"><div class="clabel">今期取得済み</div><div class="cval">'+usedNow+'</div><div class="csub">日／義務5日</div></div>'+
+    '<div class="card"><div class="clabel">今期残り義務</div><div class="cval'+(needed>0?' style="color:#c0202a"':'')+'">'+needed+'</div><div class="csub">日取得が必要</div></div>'+
+    '<div class="card"><div class="clabel">勤続</div><div class="cval" style="font-size:15px">'+Math.floor(months/12)+'年'+months%12+'ヶ月</div><div class="csub">取得日：'+emp.insDate+'</div></div>'+
     '</div>'+
-    '<div style="margin-bottom:11px"><div class="flexb" style="margin-bottom:3px"><span style="font-size:10px;color:var(--text3)">義務達成進捗（5日）</span><span style="font-size:10px">'+used+'日/5日</span></div>'+
+    nextGrantHtml+
+    '<div style="margin-bottom:11px">'+
+    '<div class="flexb" style="margin-bottom:3px"><span style="font-size:10px;color:var(--text3)">年間5日義務達成進捗</span><span style="font-size:10px">'+usedNow+'日/5日</span></div>'+
     '<div class="pbar"><div class="pfill '+(mpct>=100?'pok':needed>2?'pdanger':'pwarn')+'" style="width:'+mpct+'%"></div></div></div>'+
     '<div class="divider"></div>'+
-    '<div class="ptitle" style="margin-top:9px">有給取得履歴</div>'+
+    // 初期残日数入力（管理者のみ）
+    (adminMode?
+    '<div class="abox abox-w" style="margin-bottom:10px"><b>管理者</b>：前回までの有給残日数を入力してください（Firebaseに保存されます）'+
+    '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+    '<div><label style="font-size:10px">初期繰り越し残日数</label><input type="number" id="pl-init-paid" value="'+(emp.initPaid||0)+'" min="0" max="40" style="width:60px;margin-left:6px;font-size:12px;padding:4px 6px"></div>'+
+    '<div><label style="font-size:10px">直近付与日</label><input type="date" id="pl-init-grant-date" value="'+(emp.initGrantDate||'')+'" style="margin-left:6px;font-size:12px;padding:4px 6px"></div>'+
+    '<button class="btn btn-p btn-sm" onclick="saveInitPaid(\'' +emp.id+ '\')">保存</button>'+
+    '</div></div>':'')+
+    '<div class="ptitle" style="margin-top:9px">付与履歴</div>'+
+    '<table class="tbl" style="margin-bottom:12px"><thead><tr><th>付与日</th><th>付与日数</th><th>内訳</th></tr></thead>'+
+    '<tbody>'+(grantRows||'<tr><td colspan="3" style="text-align:center;padding:10px;color:var(--text3)">まだ付与なし</td></tr>')+'</tbody></table>'+
+    '<div class="ptitle">有給取得履歴</div>'+
     '<table class="tbl"><thead><tr><th>日付</th><th>区分</th><th>日数</th><th>取得理由</th></tr></thead><tbody>'+
     (plR.length?plR.map(function(r){
       return '<tr><td>'+r.date+'</td><td><span class="status '+(r.type==='paid'?'s-p':'s-h')+'">'+(tL[r.type]||r.type)+'</span></td><td>'+r.paidDays+'日</td><td style="font-size:10px">'+(r.reason||'<span style="color:var(--text3)">記載なし</span>')+'</td></tr>';
@@ -923,6 +1084,17 @@ function renderPaidLeave(){
     '</tbody></table></div>';
 }
 function selPl(id){curPaidEmp=id;renderPaidLeave();}
+
+function saveInitPaid(empId){
+  var ip=Number(document.getElementById('pl-init-paid').value)||0;
+  var igd=document.getElementById('pl-init-grant-date').value||null;
+  var idx=window.employees.findIndex(function(e){return e.id===empId;});
+  if(idx<0)return;
+  window.employees[idx].initPaid=ip;
+  window.employees[idx].initGrantDate=igd;
+  if(window.fsSetEmployee)window.fsSetEmployee(window.employees[idx]).then(function(){showToast('初期有給残日数を保存しました');});
+  renderPaidLeave();
+}
 
 /* ===== CALENDAR ===== */
 function renderCalendar(){
@@ -1043,7 +1215,7 @@ function addEmployee(){
   var otType=document.getElementById('emp-ot-type').value;
   if(!no||!name||!insDate){alert('番号・氏名・保険取得日は必須です');return;}
   if(window.employees.some(function(e){return e.no===no;})){alert('この従業員番号は既に使用されています');return;}
-  var emp={id:'e'+Date.now(),no:no,name:name,dept:document.getElementById('emp-dept').value,etype:etype,insDate:insDate,otType:otType};
+  var emp={id:'e'+Date.now(),no:no,name:name,dept:document.getElementById('emp-dept').value,etype:etype,insDate:insDate,otType:otType,initPaid:Number(document.getElementById('emp-init-paid').value)||0,initGrantDate:document.getElementById('emp-init-grant-date').value||null};
   if(etype==='shokutaku'){emp.sstart=document.getElementById('emp-sstart').value;emp.send=document.getElementById('emp-send').value;}
   window.employees.push(emp);
   var sr=document.getElementById('emp-save-result');
@@ -1076,6 +1248,8 @@ function openEditEmp(id){
   document.getElementById('edit-emp-ot-type').value=emp.otType;
   document.getElementById('edit-emp-sstart').value=emp.sstart||'08:00';
   document.getElementById('edit-emp-send').value=emp.send||'17:10';
+  document.getElementById('edit-emp-init-paid').value=emp.initPaid||0;
+  document.getElementById('edit-emp-init-grant-date').value=emp.initGrantDate||'';
   document.getElementById('edit-fg-shokutaku').style.display=emp.etype==='shokutaku'?'grid':'none';
   document.getElementById('edit-emp-result').innerHTML='';
   document.getElementById('edit-emp-overlay').classList.add('show');
@@ -1094,7 +1268,7 @@ function saveEmpEdit(){
   var result=document.getElementById('edit-emp-result');
   if(!no||!name||!insDate){result.innerHTML='<span style="color:#c0202a">番号・氏名・保険取得日は必須です</span>';return;}
   var idx=window.employees.findIndex(function(e){return e.id===id;});if(idx<0)return;
-  var emp=Object.assign({},window.employees[idx],{no:no,name:name,dept:document.getElementById('edit-emp-dept').value,etype:etype,insDate:insDate,otType:otType});
+  var emp=Object.assign({},window.employees[idx],{no:no,name:name,dept:document.getElementById('edit-emp-dept').value,etype:etype,insDate:insDate,otType:otType,initPaid:Number(document.getElementById('edit-emp-init-paid').value)||0,initGrantDate:document.getElementById('edit-emp-init-grant-date').value||null});
   if(etype==='shokutaku'){emp.sstart=document.getElementById('edit-emp-sstart').value;emp.send=document.getElementById('edit-emp-send').value;}
   window.employees[idx]=emp;
   result.innerHTML='<span style="color:#888">保存中...</span>';
