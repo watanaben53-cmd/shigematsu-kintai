@@ -167,7 +167,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 .numkey:hover{background:rgba(255,255,255,.22)}
 .numkey:active{background:rgba(255,255,255,.35);transform:scale(.96)}
 .punch-btns{display:grid;grid-template-columns:1fr 1fr;gap:11px;max-width:310px;margin:13px auto 0}
-.admin-bar{background:#fff8f0;border:1px solid #e8c060;border-radius:var(--r);padding:8px 13px;font-size:11px;color:#8a5010;display:none;align-items:center;gap:8px;margin-bottom:10px}
+.admin-bar{background:#fff8f0;border:1px solid #e8c060;border-radius:var(--r);padding:8px 13px;font-size:11px;color:#8a5010;display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .inline-inp{font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text1);font-family:inherit}
 .inline-inp:focus{outline:none;border-color:var(--gold)}
 .inline-sel{font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:6px;background:var(--white);color:var(--text1);font-family:inherit}
@@ -255,7 +255,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 
 <!-- RECORDS -->
 <div id="sec-records" class="sec">
-  <div class="admin-bar" id="admin-bar">
+  <div class="admin-bar" id="admin-bar" style="display:none">
     <b>管理者モード</b>：「編集」「削除」「＋記録」が利用可能です
   </div>
   <div class="panel">
@@ -504,7 +504,12 @@ window._renderAll=function(){
   const id=cur.id.replace('sec-','');
   if(id==='punch')renderPunchToday();
   if(id==='dashboard')renderDashboard();
-  if(id==='records')renderRecords();
+  if(id==='records'){
+    var oh2=document.getElementById('ops-head');if(oh2)oh2.textContent=adminMode?'操作':'';
+    var aw2=document.getElementById('add-wrap');if(aw2)aw2.style.display=adminMode?'inline-flex':'none';
+    var abar2=document.getElementById('admin-bar');if(abar2)abar2.style.display=adminMode?'flex':'none';
+    renderRecords();
+  }
   if(id==='paidleave')renderPaidLeave();
   if(id==='calendar')renderCalendar();
   if(id==='employees')renderEmployees();
@@ -771,7 +776,7 @@ function checkCmd(){
     document.getElementById('cmd-btn').textContent='管理者ログアウト';
     document.getElementById('cmd-btn').classList.add('unlocked');
     document.getElementById('pw-btn').style.display='';
-    document.getElementById('admin-bar').style.display='flex';
+    var ab=document.getElementById('admin-bar');if(ab){ab.style.display='flex';ab.style.setProperty('display','flex','important');}
     document.getElementById('add-wrap').style.display='inline-flex';
     document.getElementById('ops-head').textContent='操作';
     document.getElementById('emp-reg-panel').style.display='';
@@ -779,7 +784,9 @@ function checkCmd(){
     document.getElementById('emp-ot-head').style.display='';
     var pip=document.getElementById('pl-input-panel');if(pip)pip.style.display='';
     document.querySelectorAll('.emp-ot-cell').forEach(function(c){c.style.display='';});
-    closeCmd();renderRecords();renderEmployees();
+    closeCmd();
+    editingId=null;addingRow=false;
+    populateSels();renderRecords();renderEmployees();
   } else {
     document.getElementById('cmd-error').textContent='コマンドが正しくありません';
   }
@@ -789,7 +796,7 @@ function lockAdmin(){
   document.getElementById('cmd-btn').textContent='管理者';
   document.getElementById('cmd-btn').classList.remove('unlocked');
   document.getElementById('pw-btn').style.display='none';
-  document.getElementById('admin-bar').style.display='none';
+  var ab2=document.getElementById('admin-bar');if(ab2){ab2.style.display='none';}
   document.getElementById('add-wrap').style.display='none';
   document.getElementById('ops-head').textContent='';
   document.getElementById('emp-reg-panel').style.display='none';
@@ -804,7 +811,8 @@ function lockAdmin(){
     document.getElementById('sec-punch').classList.add('on');
     document.querySelector('.tab').classList.add('on');
   }
-  renderRecords();renderEmployees();
+  editingId=null;addingRow=false;
+  populateSels();renderRecords();renderEmployees();
 }
 
 /* ===== PW変更 ===== */
@@ -1516,7 +1524,12 @@ function goTab(name,el){
   document.getElementById('sec-'+name).classList.add('on');
   el.classList.add('on');
   if(name==='dashboard')renderDashboard();
-  if(name==='records'){editingId=null;addingRow=false;populateSels();renderRecords();}
+  if(name==='records'){editingId=null;addingRow=false;populateSels();
+    // ops-headを adminMode に合わせて更新
+    var oh=document.getElementById('ops-head');if(oh)oh.textContent=adminMode?'操作':'';
+    var aw=document.getElementById('add-wrap');if(aw)aw.style.display=adminMode?'inline-flex':'none';
+    var abar=document.getElementById('admin-bar');if(abar)abar.style.display=adminMode?'flex':'none';
+    renderRecords();}
   if(name==='paidleave')renderPaidLeave();
   if(name==='calendar')renderCalendar();
   if(name==='employees')renderEmployees();
