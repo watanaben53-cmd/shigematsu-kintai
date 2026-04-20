@@ -331,10 +331,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
       <div class="fg"><label>嘱託 始業</label><input type="time" id="emp-sstart" value="08:00"></div>
       <div class="fg"><label>嘱託 終業</label><input type="time" id="emp-send" value="17:10"></div>
     </div>
-    <div class="frow" style="margin-bottom:8px">
-      <div class="fg"><label>初期有給残日数（前回までの繰り越し残）</label><input type="number" id="emp-init-paid" value="0" min="0" max="40" placeholder="0"></div>
-      <div class="fg"><label>初期有給の付与日（直近の付与日）</label><input type="date" id="emp-init-grant-date"></div>
-    </div>
     <div class="flex" style="margin-top:8px">
       <button class="btn btn-p" onclick="addEmployee()" style="font-size:13px;padding:9px 20px">＋ 追加してFirebaseに記録</button>
     </div>
@@ -430,10 +426,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
     <div class="frow" id="edit-fg-shokutaku" style="display:none;margin-bottom:8px">
       <div class="fg"><label>嘱託 始業</label><input type="time" id="edit-emp-sstart" value="08:00"></div>
       <div class="fg"><label>嘱託 終業</label><input type="time" id="edit-emp-send" value="17:10"></div>
-    </div>
-    <div class="frow" style="margin-bottom:8px">
-      <div class="fg"><label>初期有給残日数（前回までの繰り越し残）</label><input type="number" id="edit-emp-init-paid" value="0" min="0" max="40"></div>
-      <div class="fg"><label>初期有給の付与日（直近の付与日）</label><input type="date" id="edit-emp-init-grant-date"></div>
     </div>
     <div id="edit-emp-result" style="font-size:11px;min-height:18px;margin-bottom:9px"></div>
     <div class="flex">
@@ -541,108 +533,119 @@ function calcWork(r,emp){
 // 付与スケジュール（勤続月数 → 付与日数）
 var AL_SCHEDULE=[{m:6,d:10},{m:18,d:11},{m:30,d:12},{m:42,d:14},{m:54,d:16},{m:66,d:18},{m:78,d:20}];
 
-// 社会保険取得日から付与日のリストを生成（現在日まで）
-function getGrantHistory(insDateStr){
+// 社会保険取得日から、指定日時点での付与累計リストを返す
+function getGrantsUpTo(insDateStr, targetDate){
   var ins=new Date(insDateStr+'T00:00:00');
-  var now=new Date();
   var grants=[];
   AL_SCHEDULE.forEach(function(s){
-    var grantDate=new Date(ins);
-    grantDate.setMonth(grantDate.getMonth()+s.m);
-    if(grantDate<=now){
-      grants.push({date:grantDate,days:s.d,dateStr:fmtD(grantDate)});
+    var gd=new Date(ins.getTime());
+    gd.setMonth(gd.getMonth()+s.m);
+    if(gd<=targetDate){
+      grants.push({date:new Date(gd.getTime()),days:s.d,dateStr:fmtD(gd)});
     }
   });
   return grants;
 }
 
-// 現在の有給保有数を計算（繰り越し・MAX40日・取得済みを加味）
-function calcPaidLeaveBalance(emp){
-  var grants=getGrantHistory(emp.insDate);
-  if(grants.length===0)return{balance:0,grants:[],grantNow:0,usedTotal:0,carryOver:0,detail:[]};
+// 指定日時点での「累計付与日数のうち有効な最大保有数」を返す
+// ロジック: 各付与サイクルで max40日 に制限しながら累積
+// ただし取得が一切なかったと仮定した場合の保有数上限
+function calcTheoreticalMax(insDateStr, targetDate){
+  var grants=getGrantsUpTo(insDateStr, targetDate);
+  if(grants.length===0)return 0;
+  // 付与サイクルを2年分しか繰り越せない（MAX40日）
+  // 最後の2サイクル分の付与日数がMAX
+  var last2=grants.slice(-2);
+  var total=last2.reduce(function(s,g){return s+g.days;},0);
+  return Math.min(total,40);
+}
 
-  // 全有給取得記録
+// メイン計算関数
+function calcPaidLeaveBalance(emp){
+  var now=new Date();
+  var insDate=emp.insDate;
+
+  // 全有給取得記録（古い順）
   var allUsed=window.records.filter(function(r){
     return r.empId===emp.id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm');
   }).sort(function(a,b){return a.date<b.date?-1:1;});
 
-  // 初期繰り越し（前回までの残日数）
-  var initPaid=Number(emp.initPaid||0);
-  var initGrantDate=emp.initGrantDate||null;
+  // 付与履歴（現在まで）
+  var grants=getGrantsUpTo(insDate, now);
 
-  // 付与期ごとに計算
-  // 各期: 前の付与日〜次の付与日の間に取得した日数を消費
-  var detail=[];
-  var balance=initPaid; // 初期残日数からスタート
-
-  // 初期付与日より前の取得は initPaid から消費
-  var initBoundary=initGrantDate?new Date(initGrantDate+'T00:00:00'):new Date(grants[0].date.getTime());
-
-  // 各付与サイクルを処理
-  for(var i=0;i<grants.length;i++){
-    var g=grants[i];
-    var periodStart=i===0?initBoundary:grants[i-1].date;
-    var periodEnd=i<grants.length-1?grants[i+1].date:new Date(9999,0,1);
-
-    // この期間に付与（繰り越し＋新規付与、MAX40日）
-    if(i===0&&initGrantDate&&fmtD(g.date)===initGrantDate){
-      // 初期付与日と一致する場合、initPaidにg.daysを加算
-      balance=Math.min(balance+g.days,40);
-    } else if(!initGrantDate||g.date>initBoundary){
-      balance=Math.min(balance+g.days,40);
-    }
-
-    // この期間中の取得
-    var periodUsed=allUsed.filter(function(r){
-      var d=new Date(r.date+'T00:00:00');
-      return d>=periodStart&&d<g.date;
-    }).reduce(function(s,r){return s+r.paidDays;},0);
-
-    // 付与日以降〜次の付与日前の取得
-    var afterUsed=allUsed.filter(function(r){
-      var d=new Date(r.date+'T00:00:00');
-      return d>=g.date&&d<periodEnd;
-    }).reduce(function(s,r){return s+r.paidDays;},0);
-
-    detail.push({grantDate:g.dateStr,granted:g.days,balance:balance,periodUsed:periodUsed+afterUsed});
-    balance=Math.max(0,balance-afterUsed);
+  // 次回付与日
+  var nextGrant=null;
+  var ins=new Date(insDate+'T00:00:00');
+  for(var j=0;j<AL_SCHEDULE.length;j++){
+    var nd=new Date(ins.getTime());
+    nd.setMonth(nd.getMonth()+AL_SCHEDULE[j].m);
+    if(nd>now){nextGrant={date:fmtD(nd),days:AL_SCHEDULE[j].d};break;}
   }
 
-  // 残高はMAX40日
-  balance=Math.min(balance,40);
+  // 付与が一度もない場合
+  if(grants.length===0){
+    return{balance:0,grants:[],grantNow:0,usedSinceLastGrant:0,neededForObligation:5,nextGrant:nextGrant,allUsed:allUsed,calcBasis:'まだ付与なし'};
+  }
 
-  // 今年度の付与（直近付与）
+  // === コア計算 ===
+  // 一番古い取得記録の日付を起点に計算
+  var balance=0;
+  var calcBasis='';
+
+  if(allUsed.length===0){
+    // 取得記録が全くない場合: 現在時点での理論最大値
+    balance=calcTheoreticalMax(insDate,now);
+    calcBasis='取得記録なし（付与累計から算出）';
+  } else {
+    // 最古の取得記録日を特定
+    var oldestUsedDate=new Date(allUsed[0].date+'T00:00:00');
+
+    // 最古取得日時点での付与済みリスト
+    var grantsAtOldest=getGrantsUpTo(insDate, oldestUsedDate);
+
+    // 最古取得日時点での保有数 = その時点での理論最大値（取得なし前提）
+    var balanceAtOldest=calcTheoreticalMax(insDate, oldestUsedDate);
+    calcBasis=allUsed[0].date+'時点でMAX'+balanceAtOldest+'日と仮定';
+
+    // 最古取得日から現在まで、付与と取得を順番に処理
+    balance=balanceAtOldest;
+
+    // 最古取得日以降の付与を加算
+    var grantsAfterOldest=grants.filter(function(g){return g.date>oldestUsedDate;});
+
+    // 時系列イベント（付与・取得）を合算
+    // イベントリスト作成
+    var events=[];
+    grantsAfterOldest.forEach(function(g){events.push({date:g.date,type:'grant',days:g.days});});
+    allUsed.forEach(function(r){events.push({date:new Date(r.date+'T00:00:00'),type:'use',days:r.paidDays});});
+    events.sort(function(a,b){return a.date-b.date;});
+
+    events.forEach(function(ev){
+      if(ev.type==='grant'){
+        balance=Math.min(balance+ev.days,40);
+      } else {
+        balance=Math.max(0,balance-ev.days);
+      }
+    });
+  }
+
+  // 直近付与日以降の取得数（今期の義務達成チェック用）
   var latestGrant=grants[grants.length-1];
-  var grantNow=latestGrant?latestGrant.days:0;
-
-  // 今年度の取得数（直近付与日以降）
   var usedSinceLastGrant=latestGrant?allUsed.filter(function(r){
     return new Date(r.date+'T00:00:00')>=latestGrant.date;
   }).reduce(function(s,r){return s+r.paidDays;},0):0;
-
-  // 次の付与日
-  var nextGrant=null;
-  var ins=new Date(emp.insDate+'T00:00:00');
-  var now2=new Date();
-  for(var j=0;j<AL_SCHEDULE.length;j++){
-    var d2=new Date(ins);
-    d2.setMonth(d2.getMonth()+AL_SCHEDULE[j].m);
-    if(d2>now2){nextGrant={date:fmtD(d2),days:AL_SCHEDULE[j].d};break;}
-  }
-
-  // 年間5日義務: 直近付与日から次の付与日までに5日取得する必要
   var neededForObligation=Math.max(0,5-usedSinceLastGrant);
 
   return{
-    balance:balance,
+    balance:Math.round(balance*10)/10,
     grants:grants,
-    grantNow:grantNow,
+    grantNow:latestGrant?latestGrant.days:0,
     usedSinceLastGrant:usedSinceLastGrant,
     neededForObligation:neededForObligation,
     nextGrant:nextGrant,
     latestGrant:latestGrant,
-    detail:detail,
-    allUsed:allUsed
+    allUsed:allUsed,
+    calcBasis:calcBasis
   };
 }
 
@@ -1065,14 +1068,8 @@ function renderPaidLeave(){
     '<div class="flexb" style="margin-bottom:3px"><span style="font-size:10px;color:var(--text3)">年間5日義務達成進捗</span><span style="font-size:10px">'+usedNow+'日/5日</span></div>'+
     '<div class="pbar"><div class="pfill '+(mpct>=100?'pok':needed>2?'pdanger':'pwarn')+'" style="width:'+mpct+'%"></div></div></div>'+
     '<div class="divider"></div>'+
-    // 初期残日数入力（管理者のみ）
-    (adminMode?
-    '<div class="abox abox-w" style="margin-bottom:10px"><b>管理者</b>：前回までの有給残日数を入力してください（Firebaseに保存されます）'+
-    '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
-    '<div><label style="font-size:10px">初期繰り越し残日数</label><input type="number" id="pl-init-paid" value="'+(emp.initPaid||0)+'" min="0" max="40" style="width:60px;margin-left:6px;font-size:12px;padding:4px 6px"></div>'+
-    '<div><label style="font-size:10px">直近付与日</label><input type="date" id="pl-init-grant-date" value="'+(emp.initGrantDate||'')+'" style="margin-left:6px;font-size:12px;padding:4px 6px"></div>'+
-    '<button class="btn btn-p btn-sm" onclick="saveInitPaid(\'' +emp.id+ '\')">保存</button>'+
-    '</div></div>':'')+
+    '<div style="background:#f0f6ff;border-radius:var(--r);padding:8px 12px;font-size:10px;color:#3a5abf;margin-bottom:10px">'+
+    '算出根拠：'+bal.calcBasis+'</div>'+
     '<div class="ptitle" style="margin-top:9px">付与履歴</div>'+
     '<table class="tbl" style="margin-bottom:12px"><thead><tr><th>付与日</th><th>付与日数</th><th>内訳</th></tr></thead>'+
     '<tbody>'+(grantRows||'<tr><td colspan="3" style="text-align:center;padding:10px;color:var(--text3)">まだ付与なし</td></tr>')+'</tbody></table>'+
@@ -1215,7 +1212,7 @@ function addEmployee(){
   var otType=document.getElementById('emp-ot-type').value;
   if(!no||!name||!insDate){alert('番号・氏名・保険取得日は必須です');return;}
   if(window.employees.some(function(e){return e.no===no;})){alert('この従業員番号は既に使用されています');return;}
-  var emp={id:'e'+Date.now(),no:no,name:name,dept:document.getElementById('emp-dept').value,etype:etype,insDate:insDate,otType:otType,initPaid:Number(document.getElementById('emp-init-paid').value)||0,initGrantDate:document.getElementById('emp-init-grant-date').value||null};
+  var emp={id:'e'+Date.now(),no:no,name:name,dept:document.getElementById('emp-dept').value,etype:etype,insDate:insDate,otType:otType};
   if(etype==='shokutaku'){emp.sstart=document.getElementById('emp-sstart').value;emp.send=document.getElementById('emp-send').value;}
   window.employees.push(emp);
   var sr=document.getElementById('emp-save-result');
@@ -1248,8 +1245,6 @@ function openEditEmp(id){
   document.getElementById('edit-emp-ot-type').value=emp.otType;
   document.getElementById('edit-emp-sstart').value=emp.sstart||'08:00';
   document.getElementById('edit-emp-send').value=emp.send||'17:10';
-  document.getElementById('edit-emp-init-paid').value=emp.initPaid||0;
-  document.getElementById('edit-emp-init-grant-date').value=emp.initGrantDate||'';
   document.getElementById('edit-fg-shokutaku').style.display=emp.etype==='shokutaku'?'grid':'none';
   document.getElementById('edit-emp-result').innerHTML='';
   document.getElementById('edit-emp-overlay').classList.add('show');
@@ -1268,7 +1263,7 @@ function saveEmpEdit(){
   var result=document.getElementById('edit-emp-result');
   if(!no||!name||!insDate){result.innerHTML='<span style="color:#c0202a">番号・氏名・保険取得日は必須です</span>';return;}
   var idx=window.employees.findIndex(function(e){return e.id===id;});if(idx<0)return;
-  var emp=Object.assign({},window.employees[idx],{no:no,name:name,dept:document.getElementById('edit-emp-dept').value,etype:etype,insDate:insDate,otType:otType,initPaid:Number(document.getElementById('edit-emp-init-paid').value)||0,initGrantDate:document.getElementById('edit-emp-init-grant-date').value||null});
+  var emp=Object.assign({},window.employees[idx],{no:no,name:name,dept:document.getElementById('edit-emp-dept').value,etype:etype,insDate:insDate,otType:otType});
   if(etype==='shokutaku'){emp.sstart=document.getElementById('edit-emp-sstart').value;emp.send=document.getElementById('edit-emp-send').value;}
   window.employees[idx]=emp;
   result.innerHTML='<span style="color:#888">保存中...</span>';
