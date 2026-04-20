@@ -280,6 +280,21 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy);bo
 <div id="sec-paidleave" class="sec">
   <div id="pl-alerts"></div>
   <div class="flex" id="pl-chips" style="margin-bottom:11px"></div>
+  <!-- 管理者: 過去有給一括入力パネル -->
+  <div id="pl-input-panel" style="display:none" class="panel" style="border-color:#e8c060;background:#fffdf8">
+    <div class="ptitle">過去の有給取得を入力 <span class="badge b-amber">管理者専用</span></div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">
+      わかっている有給取得をここに入力してください。一番古い記録を起点に現在の保有日数を自動計算します。
+    </div>
+    <div id="pl-input-emp-name" style="font-size:12px;font-weight:500;color:var(--navy);margin-bottom:10px"></div>
+    <div id="pl-past-rows"></div>
+    <button class="btn btn-add" onclick="addPastPaidRow()" style="margin-bottom:12px;margin-top:4px">＋ 行を追加</button>
+    <div class="flex">
+      <button class="btn btn-p" onclick="savePastPaid()">Firebaseに一括保存</button>
+      <span style="font-size:10px;color:var(--text3)">既存の記録と重複する日付は上書きされます</span>
+    </div>
+    <div id="pl-save-result" style="font-size:11px;margin-top:7px;min-height:16px"></div>
+  </div>
   <div id="pl-detail"></div>
 </div>
 
@@ -722,6 +737,7 @@ function checkCmd(){
     document.getElementById('emp-reg-panel').style.display='';
     document.getElementById('emp-ops-head').textContent='操作';
     document.getElementById('emp-ot-head').style.display='';
+    var pip=document.getElementById('pl-input-panel');if(pip)pip.style.display='';
     document.querySelectorAll('.emp-ot-cell').forEach(function(c){c.style.display='';});
     closeCmd();renderRecords();renderEmployees();
   } else {
@@ -739,6 +755,7 @@ function lockAdmin(){
   document.getElementById('emp-reg-panel').style.display='none';
   document.getElementById('emp-ops-head').textContent='';
   document.getElementById('emp-ot-head').style.display='none';
+  var pip2=document.getElementById('pl-input-panel');if(pip2)pip2.style.display='none';
   document.querySelectorAll('.emp-ot-cell').forEach(function(c){c.style.display='none';});
   var cur=document.querySelector('.sec.on');
   if(cur&&cur.id==='sec-employees'){
@@ -1054,6 +1071,7 @@ function renderPaidLeave(){
     return r.empId===emp.id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm');
   }).sort(function(a,b){return a.date<b.date?-1:1;});
 
+  updatePlInputPanel();
   document.getElementById('pl-detail').innerHTML=
     '<div class="panel">'+
     '<div class="ptitle">'+emp.name+'　有給状況</div>'+
@@ -1081,6 +1099,96 @@ function renderPaidLeave(){
     '</tbody></table></div>';
 }
 function selPl(id){curPaidEmp=id;renderPaidLeave();}
+
+/* ===== 過去有給一括入力 ===== */
+function updatePlInputPanel(){
+  var emp=ge(curPaidEmp);if(!emp)return;
+  var nameEl=document.getElementById('pl-input-emp-name');
+  if(nameEl)nameEl.textContent='対象従業員：'+emp.name+'（'+emp.no+'）';
+  // 既存の有給記録を入力欄に反映
+  initPastPaidRows();
+}
+
+function initPastPaidRows(){
+  var emp=ge(curPaidEmp);if(!emp)return;
+  var existing=window.records.filter(function(r){
+    return r.empId===emp.id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm');
+  }).sort(function(a,b){return a.date<b.date?-1:1;});
+  var container=document.getElementById('pl-past-rows');
+  if(!container)return;
+  if(existing.length===0){
+    // 空行を3つ用意
+    container.innerHTML='';
+    for(var i=0;i<3;i++)appendPastRow(container);
+  } else {
+    container.innerHTML='';
+    existing.forEach(function(r){appendPastRow(container,r.date,r.type,r.reason);});
+    appendPastRow(container); // 空行を1つ追加
+  }
+}
+
+function appendPastRow(container, date, type, reason){
+  var row=document.createElement('div');
+  row.className='past-paid-row';
+  row.style.cssText='display:grid;grid-template-columns:140px 150px 1fr 36px;gap:6px;margin-bottom:6px;align-items:center';
+  var typeOpts=['<option value="paid"'+(type==='paid'?' selected':'')+'>有給（全日）</option>',
+    '<option value="half_am"'+(type==='half_am'?' selected':'')+'>午前半休</option>',
+    '<option value="half_pm"'+(type==='half_pm'?' selected':'')+'>午後半休</option>'].join('');
+  row.innerHTML=
+    '<input type="date" class="pp-date" value="'+(date||'')+'" style="font-size:11px;padding:5px 6px">'+
+    '<select class="pp-type" style="font-size:11px;padding:5px 6px">'+typeOpts+'</select>'+
+    '<input type="text" class="pp-reason" value="'+(reason||'')+'" placeholder="取得理由（必須）" style="font-size:11px;padding:5px 6px">'+
+    '<button onclick="this.parentNode.remove()" style="padding:4px 8px;font-size:12px;border:1px solid #f0b0b0;background:#fde8e8;color:#c0202a;border-radius:6px;cursor:pointer">✕</button>';
+  container.appendChild(row);
+}
+
+function addPastPaidRow(){
+  var container=document.getElementById('pl-past-rows');
+  if(container)appendPastRow(container);
+}
+
+function savePastPaid(){
+  var emp=ge(curPaidEmp);if(!emp)return;
+  var rows=document.querySelectorAll('.past-paid-row');
+  var result=document.getElementById('pl-save-result');
+  var toSave=[];
+  var hasError=false;
+  rows.forEach(function(row){
+    var date=row.querySelector('.pp-date').value;
+    var type=row.querySelector('.pp-type').value;
+    var reason=row.querySelector('.pp-reason').value.trim();
+    if(!date)return; // 空行はスキップ
+    if(!reason){
+      row.querySelector('.pp-reason').style.borderColor='#c0202a';
+      hasError=true;return;
+    }
+    row.querySelector('.pp-reason').style.borderColor='';
+    toSave.push({date:date,type:type,reason:reason});
+  });
+  if(hasError){result.innerHTML='<span style="color:#c0202a">有給理由が未入力の行があります</span>';return;}
+  if(toSave.length===0){result.innerHTML='<span style="color:#888">入力された日付がありません</span>';return;}
+
+  result.innerHTML='<span style="color:#888">保存中...</span>';
+  var promises=toSave.map(function(item){
+    var paidDays=item.type==='paid'?1:0.5;
+    var calc={workMin:0,otMin:0,paidDays:paidDays,baseMin:540};
+    var rec={id:'r_past_'+emp.id+'_'+item.date.replace(/-/g,''),empId:emp.id,date:item.date,type:item.type,start:'',end:'',brk:0,reason:item.reason};
+    Object.assign(rec,calc);
+    // ローカルに追加・更新
+    var idx=window.records.findIndex(function(r){return r.empId===emp.id&&r.date===item.date;});
+    if(idx>=0)window.records[idx]=rec;else window.records.push(rec);
+    if(window.fsSetRecord)return window.fsSetRecord(rec);
+    return Promise.resolve();
+  });
+
+  Promise.all(promises).then(function(){
+    result.innerHTML='<span style="color:#1a7a3a">✓ '+toSave.length+'件の有給記録をFirebaseに保存しました</span>';
+    renderPaidLeave();
+    showToast(toSave.length+'件の有給記録を保存しました');
+  }).catch(function(){
+    result.innerHTML='<span style="color:#c0202a">⚠ 一部の保存に失敗しました</span>';
+  });
+}
 
 function saveInitPaid(empId){
   var ip=Number(document.getElementById('pl-init-paid').value)||0;
