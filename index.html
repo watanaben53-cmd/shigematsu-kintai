@@ -543,139 +543,177 @@ function calcWork(r,emp){
   return{workMin:wm,otMin:ot,paidDays:0,baseMin:bm};
 }
 
-/* ===== 有給繰り越し計算エンジン ===== */
+/* ===== 有給繰り越し計算エンジン（完全版） ===== */
 
-// 付与スケジュール（勤続月数 → 付与日数）
-var AL_SCHEDULE=[{m:6,d:10},{m:18,d:11},{m:30,d:12},{m:42,d:14},{m:54,d:16},{m:66,d:18},{m:78,d:20}];
+/*
+ 【計算ルール】
+ 1. 付与スケジュール: 6ヶ月後10日 → 1.5年後11日 → ... → 6.5年以降は毎年20日（無限に続く）
+ 2. 繰り越し: 未使用分は翌年に繰り越し、合計MAX40日
+ 3. 有効期限: 付与から2年間有効（MAX40日はこれに相当）
+ 4. 過去記録から計算: 最古の取得記録時点でMAX保有と仮定し、以降を時系列計算
+ 5. 年間5日取得義務: 直近付与日から次の付与日までの間に5日取得
+*/
 
-// 社会保険取得日から、指定日時点での付与累計リストを返す
-function getGrantsUpTo(insDateStr, targetDate){
-  var ins=new Date(insDateStr+'T00:00:00');
-  var grants=[];
-  AL_SCHEDULE.forEach(function(s){
-    var gd=new Date(ins.getTime());
-    gd.setMonth(gd.getMonth()+s.m);
-    if(gd<=targetDate){
-      grants.push({date:new Date(gd.getTime()),days:s.d,dateStr:fmtD(gd)});
+// 指定の保険取得日から現在まで（またはtoDate指定）の全付与履歴を返す
+// 6.5年(78ヶ月)以降は毎年20日付与が続く
+function getAllGrants(insDateStr, toDate) {
+  var ins = new Date(insDateStr + 'T00:00:00');
+  var limit = toDate || new Date();
+  var schedule = [
+    {m:6,d:10},{m:18,d:11},{m:30,d:12},
+    {m:42,d:14},{m:54,d:16},{m:66,d:18},{m:78,d:20}
+  ];
+  var grants = [];
+
+  // 最初の7回
+  schedule.forEach(function(s) {
+    var gd = new Date(ins.getTime());
+    gd.setMonth(gd.getMonth() + s.m);
+    if (gd <= limit) {
+      grants.push({ date: new Date(gd.getTime()), days: s.d, dateStr: fmtD(gd) });
     }
   });
+
+  // 78ヶ月以降: 毎年20日（最後の付与日から1年ごとに追加）
+  if (grants.length === 7) {
+    var lastDate = new Date(grants[6].date.getTime());
+    var safetyCount = 0;
+    while (safetyCount < 60) { // 最大60年分（無限ループ防止）
+      safetyCount++;
+      var nextDate = new Date(lastDate.getTime());
+      nextDate.setFullYear(nextDate.getFullYear() + 1);
+      if (nextDate > limit) break;
+      grants.push({ date: new Date(nextDate.getTime()), days: 20, dateStr: fmtD(nextDate) });
+      lastDate = nextDate;
+    }
+  }
+
   return grants;
 }
 
-// 指定日時点での「累計付与日数のうち有効な最大保有数」を返す
-// ロジック: 各付与サイクルで max40日 に制限しながら累積
-// ただし取得が一切なかったと仮定した場合の保有数上限
-function calcTheoreticalMax(insDateStr, targetDate){
-  var grants=getGrantsUpTo(insDateStr, targetDate);
-  if(grants.length===0)return 0;
-  // 付与サイクルを2年分しか繰り越せない（MAX40日）
-  // 最後の2サイクル分の付与日数がMAX
-  var last2=grants.slice(-2);
-  var total=last2.reduce(function(s,g){return s+g.days;},0);
-  return Math.min(total,40);
+// 次回付与日を返す
+function getNextGrant(insDateStr) {
+  var allGrants = getAllGrants(insDateStr, new Date(9999, 0, 1));
+  var now = new Date();
+  for (var i = 0; i < allGrants.length; i++) {
+    if (allGrants[i].date > now) {
+      return { date: allGrants[i].dateStr, days: allGrants[i].days };
+    }
+  }
+  return null;
 }
 
 // メイン計算関数
-function calcPaidLeaveBalance(emp){
-  var now=new Date();
-  var insDate=emp.insDate;
+function calcPaidLeaveBalance(emp) {
+  var now = new Date();
+  var insDate = emp.insDate;
 
-  // 全有給取得記録（古い順）
-  var allUsed=window.records.filter(function(r){
-    return r.empId===emp.id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm');
-  }).sort(function(a,b){return a.date<b.date?-1:1;});
-
-  // 付与履歴（現在まで）
-  var grants=getGrantsUpTo(insDate, now);
+  // 現在までの全付与履歴
+  var grants = getAllGrants(insDate, now);
 
   // 次回付与日
-  var nextGrant=null;
-  var ins=new Date(insDate+'T00:00:00');
-  for(var j=0;j<AL_SCHEDULE.length;j++){
-    var nd=new Date(ins.getTime());
-    nd.setMonth(nd.getMonth()+AL_SCHEDULE[j].m);
-    if(nd>now){nextGrant={date:fmtD(nd),days:AL_SCHEDULE[j].d};break;}
-  }
+  var nextGrant = getNextGrant(insDate);
+
+  // 全有給取得記録（古い順）
+  var allUsed = window.records.filter(function(r) {
+    return r.empId === emp.id &&
+           (r.type === 'paid' || r.type === 'half_am' || r.type === 'half_pm');
+  }).sort(function(a, b) { return a.date < b.date ? -1 : 1; });
 
   // 付与が一度もない場合
-  if(grants.length===0){
-    return{balance:0,grants:[],grantNow:0,usedSinceLastGrant:0,neededForObligation:5,nextGrant:nextGrant,allUsed:allUsed,calcBasis:'まだ付与なし'};
+  if (grants.length === 0) {
+    return {
+      balance: 0, grants: grants, latestGrant: null,
+      usedSinceLastGrant: 0, neededForObligation: 5,
+      nextGrant: nextGrant, allUsed: allUsed,
+      calcBasis: 'まだ付与なし（入社から6ヶ月未満）'
+    };
   }
 
-  // === コア計算 ===
-  // 一番古い取得記録の日付を起点に計算
-  var balance=0;
-  var calcBasis='';
+  var latestGrant = grants[grants.length - 1];
+  var balance = 0;
+  var calcBasis = '';
 
-  if(allUsed.length===0){
-    // 取得記録が全くない場合: 現在時点での理論最大値
-    balance=calcTheoreticalMax(insDate,now);
-    calcBasis='取得記録なし（付与累計から算出）';
+  if (allUsed.length === 0) {
+    // 取得記録なし: 時系列で付与だけ積み上げ（MAX40日）
+    grants.forEach(function(g) {
+      balance = Math.min(balance + g.days, 40);
+    });
+    calcBasis = '取得記録なし（付与のみで算出）';
   } else {
-    // 最古の取得記録日を特定
-    var oldestUsedDate=new Date(allUsed[0].date+'T00:00:00');
+    // 最古の取得記録の日付
+    var oldestDate = new Date(allUsed[0].date + 'T00:00:00');
 
-    // 最古取得日時点での付与済みリスト
-    var grantsAtOldest=getGrantsUpTo(insDate, oldestUsedDate);
+    // 最古取得日「直前」の付与までの残高をMAXで仮定
+    // = 最古取得日時点で有効な付与を全部MAX40で積んだ値
+    var grantsBeforeOldest = grants.filter(function(g) { return g.date <= oldestDate; });
 
-    // 最古取得日時点での保有数 = その時点での理論最大値（取得なし前提）
-    var balanceAtOldest=calcTheoreticalMax(insDate, oldestUsedDate);
-    calcBasis=allUsed[0].date+'時点でMAX'+balanceAtOldest+'日と仮定';
+    if (grantsBeforeOldest.length === 0) {
+      // 最初の付与前に取得記録がある（イレギュラー）
+      balance = 0;
+      calcBasis = '付与前の記録（0日から計算）';
+    } else {
+      // 最古取得日時点でのMAX残高を算出
+      // 繰り越しはMAX40日なので、付与が2回以上あれば上限に近い
+      var tempBal = 0;
+      grantsBeforeOldest.forEach(function(g) {
+        tempBal = Math.min(tempBal + g.days, 40);
+      });
+      balance = tempBal;
+      calcBasis = allUsed[0].date + ' 時点でMAX ' + balance + '日と仮定';
+    }
 
-    // 最古取得日から現在まで、付与と取得を順番に処理
-    balance=balanceAtOldest;
+    // 最古取得日以降の全イベント（付与・取得）を時系列で処理
+    var grantsAfter = grants.filter(function(g) { return g.date > oldestDate; });
+    var events = [];
+    grantsAfter.forEach(function(g) {
+      events.push({ date: g.date, type: 'grant', days: g.days });
+    });
+    allUsed.forEach(function(r) {
+      events.push({ date: new Date(r.date + 'T00:00:00'), type: 'use', days: r.paidDays });
+    });
+    events.sort(function(a, b) { return a.date - b.date; });
 
-    // 最古取得日以降の付与を加算
-    var grantsAfterOldest=grants.filter(function(g){return g.date>oldestUsedDate;});
-
-    // 時系列イベント（付与・取得）を合算
-    // イベントリスト作成
-    var events=[];
-    grantsAfterOldest.forEach(function(g){events.push({date:g.date,type:'grant',days:g.days});});
-    allUsed.forEach(function(r){events.push({date:new Date(r.date+'T00:00:00'),type:'use',days:r.paidDays});});
-    events.sort(function(a,b){return a.date-b.date;});
-
-    events.forEach(function(ev){
-      if(ev.type==='grant'){
-        balance=Math.min(balance+ev.days,40);
+    events.forEach(function(ev) {
+      if (ev.type === 'grant') {
+        balance = Math.min(balance + ev.days, 40);
       } else {
-        balance=Math.max(0,balance-ev.days);
+        balance = Math.max(0, balance - ev.days);
       }
     });
   }
 
-  // 直近付与日以降の取得数（今期の義務達成チェック用）
-  var latestGrant=grants[grants.length-1];
-  var usedSinceLastGrant=latestGrant?allUsed.filter(function(r){
-    return new Date(r.date+'T00:00:00')>=latestGrant.date;
-  }).reduce(function(s,r){return s+r.paidDays;},0):0;
-  var neededForObligation=Math.max(0,5-usedSinceLastGrant);
+  // 今期（直近付与日以降）の取得数 → 年間5日義務チェック
+  var usedSinceLastGrant = allUsed.filter(function(r) {
+    return new Date(r.date + 'T00:00:00') >= latestGrant.date;
+  }).reduce(function(s, r) { return s + r.paidDays; }, 0);
+  var neededForObligation = Math.max(0, 5 - usedSinceLastGrant);
 
-  return{
-    balance:Math.round(balance*10)/10,
-    grants:grants,
-    grantNow:latestGrant?latestGrant.days:0,
-    usedSinceLastGrant:usedSinceLastGrant,
-    neededForObligation:neededForObligation,
-    nextGrant:nextGrant,
-    latestGrant:latestGrant,
-    allUsed:allUsed,
-    calcBasis:calcBasis
+  return {
+    balance: Math.round(balance * 10) / 10,
+    grants: grants,
+    latestGrant: latestGrant,
+    usedSinceLastGrant: usedSinceLastGrant,
+    neededForObligation: neededForObligation,
+    nextGrant: nextGrant,
+    allUsed: allUsed,
+    calcBasis: calcBasis
   };
 }
 
-// 後方互換用（ダッシュボード・印刷等で使用）
+// 後方互換用（ダッシュボード用）
 function calcAL(ins){
-  var sc=AL_SCHEDULE;
-  var months=Math.floor(((new Date())-new Date(ins))/(1000*60*60*24*30.44));
-  var days=0;for(var i=sc.length-1;i>=0;i--){if(months>=sc[i].m){days=sc[i].d;break;}}
-  return days;
+  // 最新付与日数を返す（表示用）
+  var grants = getAllGrants(ins, new Date());
+  if(grants.length === 0) return 0;
+  return grants[grants.length-1].days;
 }
 function usedThisYear(id){
-  var yr=today.getFullYear();
-  return window.records.filter(function(r){
-    return r.empId===id&&(r.type==='paid'||r.type==='half_am'||r.type==='half_pm')&&r.date&&r.date.indexOf(yr)===0;
-  }).reduce(function(s,r){return s+r.paidDays;},0);
+  // ダッシュボード義務チェック用: calcPaidLeaveBalanceのneededForObligationと統一
+  var emp = ge(id);
+  if(!emp) return 0;
+  var bal = calcPaidLeaveBalance(emp);
+  return bal.usedSinceLastGrant;
 }
 function workdays(y,m,et){
   const n=new Date(y,m+1,0).getDate();let c=0;
