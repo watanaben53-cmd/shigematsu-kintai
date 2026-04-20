@@ -498,6 +498,8 @@ window.calDays={};
 let punches={};
 
 window._renderAll=function(){
+  // 従業員リストが変わったら常にセレクトボックスを更新
+  populateSels();
   const cur=document.querySelector('.sec.on');if(!cur)return;
   const id=cur.id.replace('sec-','');
   if(id==='punch')renderPunchToday();
@@ -1514,7 +1516,7 @@ function goTab(name,el){
   document.getElementById('sec-'+name).classList.add('on');
   el.classList.add('on');
   if(name==='dashboard')renderDashboard();
-  if(name==='records'){editingId=null;addingRow=false;renderRecords();}
+  if(name==='records'){editingId=null;addingRow=false;populateSels();renderRecords();}
   if(name==='paidleave')renderPaidLeave();
   if(name==='calendar')renderCalendar();
   if(name==='employees')renderEmployees();
