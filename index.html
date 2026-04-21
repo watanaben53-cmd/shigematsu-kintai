@@ -534,20 +534,39 @@ function isWE(ds){const d=new Date(ds+'T00:00:00');return d.getDay()===0||d.getD
 function isOff(ds,et){return isWE(ds)||isHoliday(ds,et)}
 
 function calcWork(r,emp){
-  const bs=(emp&&emp.sstart)?emp.sstart:'08:00';
-  const be=(emp&&emp.send)?emp.send:'17:10';
-  const bk=60;
-  const bm=toMin(be)-toMin(bs)-bk;
+  var bs=(emp&&emp.sstart)?emp.sstart:'08:00';
+  var be=(emp&&emp.send)?emp.send:'17:10';
+  var bk=60; // 所定休憩60分
+  var bm=toMin(be)-toMin(bs)-bk; // 所定労働時間（分）
+
   if(r.type==='paid')return{workMin:0,otMin:0,paidDays:1,baseMin:bm};
   if(r.type==='half_am'||r.type==='half_pm')return{workMin:0,otMin:0,paidDays:0.5,baseMin:bm};
   if(r.type==='absence')return{workMin:0,otMin:0,paidDays:0,baseMin:bm};
   if(!r.start||!r.end)return{workMin:0,otMin:0,paidDays:0,baseMin:bm};
-  const brk=Number(r.brk!=null?r.brk:bk);
-  const wm=Math.max(0,toMin(r.end)-toMin(r.start)-brk);
-  const otType=(emp&&emp.otType)?emp.otType:'actual';
-  let ot=0;
-  if(otType==='actual'){ot=Math.max(0,wm-bm);ot=Math.ceil(ot/10)*10;}
-  return{workMin:wm,otMin:ot,paidDays:0,baseMin:bm};
+
+  var startMin=toMin(r.start);
+  var baseStartMin=toMin(bs); // 所定始業（例：8:00=480分）
+
+  // 所定始業より早く来た分は休憩として加算（早出は労働時間に含めない）
+  var earlyMin=Math.max(0, baseStartMin - startMin);
+
+  var brk=Number(r.brk!=null?r.brk:bk) + earlyMin;
+
+  // 実働時間（早出分は休憩扱いで除外済み）
+  var wm=Math.max(0, toMin(r.end) - startMin - brk);
+
+  // 残業（所定終業17:10以降の分、1分単位で計算）
+  var otType=(emp&&emp.otType)?emp.otType:'actual';
+  var ot=0;
+  if(otType==='actual'){
+    // 所定終業時刻以降の時間 = 残業（1分単位、四捨五入なし）
+    var endMin=toMin(r.end);
+    var baseEndMin=toMin(be); // 所定終業（例：17:10=1030分）
+    ot=Math.max(0, endMin - baseEndMin);
+    // ※ 休憩は所定時間内に取得済みと仮定（残業時間帯の休憩は別途考慮不要）
+  }
+
+  return{workMin:wm, otMin:ot, paidDays:0, baseMin:bm};
 }
 
 /* ===== 有給繰り越し計算エンジン（完全版） ===== */
