@@ -1045,7 +1045,10 @@ function saveEdit(id,empId){
     Object.assign(window.records[idx],{type:type,start:start,end:end,brk:Number(brk),reason:reason},calc);
     if(window.fsSetRecord)window.fsSetRecord(window.records[idx]);
   }
-  editingId=null;renderRecords();showToast('保存しました');
+  editingId=null;
+  // 選択中の従業員・月を維持したまま再描画
+  renderRecords();
+  showToast('保存しました ✓ 続けて編集できます');
 }
 function delRec(id){
   if(!confirm('この記録を削除しますか？'))return;
@@ -1073,7 +1076,9 @@ function saveAdd(empId,ds){
   var idx=window.records.findIndex(function(r){return r.empId===empId&&r.date===ds;});
   if(idx>=0)window.records[idx]=rec;else window.records.push(rec);
   if(window.fsSetRecord)window.fsSetRecord(rec);
-  addingRow=false;window._addDs=null;renderRecords();showToast('追加しました');
+  addingRow=false;window._addDs=null;
+  renderRecords();
+  showToast('追加しました ✓ 続けて編集できます');
 }
 
 /* ===== PAID LEAVE ===== */
@@ -1540,7 +1545,15 @@ function goTab(name,el){
 function populateSels(){
   ['rec-emp'].forEach(function(id){
     var s=document.getElementById(id);
-    if(s)s.innerHTML=window.employees.map(function(e){return '<option value="'+e.id+'">'+e.name+'（'+e.no+'）</option>';}).join('');
+    if(!s)return;
+    var prev=s.value; // 現在の選択値を保存
+    s.innerHTML=window.employees.map(function(e){
+      return '<option value="'+e.id+'">'+e.name+'（'+e.no+'）</option>';
+    }).join('');
+    // 以前の選択値が存在すれば復元
+    if(prev&&s.querySelector('option[value="'+prev+'"]')){
+      s.value=prev;
+    }
   });
 }
 function initMonths(){
